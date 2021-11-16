@@ -69,7 +69,7 @@ double* H_z;
 **/
 
 /** Critical allocation shortcut (malloc or Critical error with exit) **/
-void *malloc_and_check_critical(size_t __size){
+void *malloc_and_check(size_t __size){
   void *ptr = malloc(__size);
   if(!ptr){
     perror("CRITICAL ERROR: Could not allocate enough memory!");
@@ -88,7 +88,7 @@ void *malloc_and_check_critical(size_t __size){
 Parameters *load_parameters(char *filename)
 {
   FILE* pParameters_file = fopen(filename, "r");
-  Parameters *pParameters = malloc_and_check_critical(sizeof(Parameters));
+  Parameters *pParameters = malloc_and_check(sizeof(Parameters));
 
   if(!pParameters_file){
     perror("Unable to open parameters file!");
@@ -112,21 +112,21 @@ Parameters *load_parameters(char *filename)
 
 Fields *initialize_fields(uint space_steps_x, uint space_steps_y, uint space_steps_z){
 
-    Fields *pFields = malloc_and_check_critical(sizeof(Fields));
+    Fields *pFields = malloc_and_check(sizeof(Fields));
     uint space_size = space_steps_x*space_steps_y*space_steps_z;
 
-    pFields->E_x = malloc_and_check_critical(sizeof(double)*space_size);
+    pFields->E_x = malloc_and_check(sizeof(double)*space_size);
     memset(&pFields->E_x, 0, sizeof(double)*space_size);  // NOT SURE ABOUT THE &.
-    pFields->E_y = malloc_and_check_critical(sizeof(double)*space_size);
+    pFields->E_y = malloc_and_check(sizeof(double)*space_size);
     memset(&pFields->E_y, 0, sizeof(double)*space_size);
-    pFields->E_z = malloc_and_check_critical(sizeof(double)*space_size);
+    pFields->E_z = malloc_and_check(sizeof(double)*space_size);
     memset(&pFields->E_z, 0, sizeof(double)*space_size);
 
-    pFields->H_x = malloc_and_check_critical(sizeof(double)*space_size);
+    pFields->H_x = malloc_and_check(sizeof(double)*space_size);
     memset(&pFields->H_x, 0, sizeof(double)*space_size);
-    pFields->H_y = malloc_and_check_critical(sizeof(double)*space_size);
+    pFields->H_y = malloc_and_check(sizeof(double)*space_size);
     memset(&pFields->H_y, 0, sizeof(double)*space_size);
-    pFields->H_z = malloc_and_check_critical(sizeof(double)*space_size);
+    pFields->H_z = malloc_and_check(sizeof(double)*space_size);
     memset(&pFields->H_z, 0, sizeof(double)*space_size);
 
     return pFields;
