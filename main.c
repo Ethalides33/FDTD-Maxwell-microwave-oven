@@ -69,7 +69,7 @@ double* H_z;
 **/
 
 /** Critical allocation shortcut (malloc or Critical error with exit) **/
-void *malloc_and_check(size_t __size){
+void *malloc_and_check_critical(size_t __size){
   void *ptr = malloc(__size);
   if(!ptr){
     perror("CRITICAL ERROR: Could not allocate enough memory!");
@@ -88,7 +88,7 @@ void *malloc_and_check(size_t __size){
 Parameters *load_parameters(char *filename)
 {
   FILE* pParameters_file = fopen(filename, "r");
-  Parameters *pParameters = malloc_and_check(sizeof(Parameters));
+  Parameters *pParameters = malloc_and_check_critical(sizeof(Parameters));
 
   if(!pParameters_file){
     perror("Unable to open parameters file!");
@@ -109,24 +109,24 @@ Parameters *load_parameters(char *filename)
   return pParameters;
 }
 
+//It might be possible to only store data for one time step. 
+Fields *initialize_fields(Parameters *params){
 
-Fields *initialize_fields(uint space_steps_x, uint space_steps_y, uint space_steps_z){
-
-    Fields *pFields = malloc_and_check(sizeof(Fields));
+    Fields *pFields = malloc_and_check_critical(sizeof(Fields));
     uint space_size = space_steps_x*space_steps_y*space_steps_z;
 
-    pFields->E_x = malloc_and_check(sizeof(double)*space_size);
+    pFields->E_x = malloc_and_check_critical(sizeof(double)*space_size);
     memset(&pFields->E_x, 0, sizeof(double)*space_size);  // NOT SURE ABOUT THE &.
-    pFields->E_y = malloc_and_check(sizeof(double)*space_size);
+    pFields->E_y = malloc_and_check_critical(sizeof(double)*space_size);
     memset(&pFields->E_y, 0, sizeof(double)*space_size);
-    pFields->E_z = malloc_and_check(sizeof(double)*space_size);
+    pFields->E_z = malloc_and_check_critical(sizeof(double)*space_size);
     memset(&pFields->E_z, 0, sizeof(double)*space_size);
 
-    pFields->H_x = malloc_and_check(sizeof(double)*space_size);
+    pFields->H_x = malloc_and_check_critical(sizeof(double)*space_size);
     memset(&pFields->H_x, 0, sizeof(double)*space_size);
-    pFields->H_y = malloc_and_check(sizeof(double)*space_size);
+    pFields->H_y = malloc_and_check_critical(sizeof(double)*space_size);
     memset(&pFields->H_y, 0, sizeof(double)*space_size);
-    pFields->H_z = malloc_and_check(sizeof(double)*space_size);
+    pFields->H_z = malloc_and_check_critical(sizeof(double)*space_size);
     memset(&pFields->H_z, 0, sizeof(double)*space_size);
 
     return pFields;
@@ -139,12 +139,116 @@ void set_initial_conditions(Fields *pFields){
 }
 
 
-void update_H_field(){
+void update_H_x_field(){
 
+int i, j, k;
+double factor = time_step/(mu*space_step);
+for (i=0; i<imax; i++)
+    for(j=0; j<jmax; j++)
+        for(k=0; k<kmax; k++){
+            if(i==0 || i==imax-1){
+                H_x[i + j*jmax + k*jmax*kmax] = 0;
+            }
+            else
+            {
+                H_x[i + j*jmax + k*jmax*kmax] = H_x[i + j*jmax + k*jmax*kmax]
+                    + factor*(E_y[i + j*jmax + (k+1)*jmax*kmax]-E_y[i + j*jmax + k*jmax*kmax])
+                    - factor*(E_z[i + (j+1)*jmax + k*jmax*kmax]-E_z[i + j*jmax + k*jmax*kmax]);
+            }
+        }
 }
 
-void update_E_field(){
 
+void update_H_y_field(){
+
+int i, j, k;
+double factor = time_step/(mu*space_step);
+for (i=0; i<imax; i++)
+    for(j=0; j<jmax; j++)
+        for(k=0; k<kmax; k++){
+            if(j==0 || j==jmax-1){
+                H_y[i + j*jmax + k*jmax*kmax] = 0;
+            }
+            else{
+                H_y[i + j*jmax + k*jmax*kmax] = H_y[i + j*jmax + k*jmax*kmax]
+                    + factor*(E_z[i+1 + j*jmax + k*jmax*kmax]-E_z[i + j*jmax + k*jmax*kmax])
+                    - factor*(E_x[i + j*jmax + (k+1)*jmax*kmax]-E_x[i + j*jmax + k*jmax*kmax]);
+            }
+        }
+}
+
+void update_H_z_field(){
+
+int i, j, k;
+double factor = time_step/(mu*space_step);
+for (i=1; i<imax-1; i++)
+    for(j=1; j<jmax-1; j++)
+        for(k=1; k<kmax-1; k++){
+            if(k==0 || k==kmax-1){
+                H_z[i + j*jmax + k*jmax*kmax] = 0;
+            }
+            else{
+                H_z[i + j*jmax + k*jmax*kmax] = H_z[i + j*jmax + k*jmax*kmax]
+                    + factor*(E_x[i + (j+1)*jmax + k*jmax*kmax]-E_x[i + j*jmax + k*jmax*kmax])
+                    - factor*(E_y[i+1 + j*jmax + k*jmax*kmax]-E_y[i + j*jmax + k*jmax*kmax]);
+            }
+        }
+}
+
+void update_E_x_field(){
+
+int i, j, k;
+double factor = time_step/(epsilon*space_step);
+for (i=1; i<imax-1; i++)
+    for(j=1; j<jmax-1; j++)
+        for(k=1; k<kmax-1; k++){
+            if(j==0 || j==jmax-1 || k==0 || k==kmax-1){
+                H_z[i + j*jmax + k*jmax*kmax] = 0;
+            }
+            else{
+                E_x[i + j*jmax + k*jmax*kmax] = E_x[i + j*jmax + k*jmax*kmax]
+                    + factor*(H_z[i + j*jmax + k*jmax*kmax]-H_z[i + (j-1)*jmax + k*jmax*kmax])
+                    - factor*(H_y[i + j*jmax + k*jmax*kmax]-H_y[i + j*jmax + (k-1)*jmax*kmax]);
+            }
+        }
+}
+
+void update_E_y_field(){
+
+
+int i, j, k;
+double factor = time_step/(epsilon*space_step);
+for (i=1; i<imax-1; i++)
+    for(j=1; j<jmax-1; j++)
+        for(k=1; k<kmax-1; k++){
+            if(i==0 || i==imax-1 || k==0 || k==kmax-1){
+                H_z[i + j*jmax + k*jmax*kmax] = 0;
+            }
+            else{
+                E_y[i + j*jmax + k*jmax*kmax] = E_y[i + j*jmax + k*jmax*kmax]
+                    + factor*(H_x[i + j*jmax + k*jmax*kmax]-H_x[i + j*jmax + (k-1)*jmax*kmax])
+                    - factor*(H_z[i + j*jmax + k*jmax*kmax]-H_z[i-1 + j*jmax + k*jmax*kmax]);
+            }
+        }
+}
+
+
+void update_E_z_field(){
+
+int i, j, k;
+double factor = time_step/(epsilon*space_step);
+for (i=1; i<imax-1; i++)
+    for(j=1; j<jmax-1; j++)
+        for(k=1; k<kmax-1; k++){
+            if(i==0 || i==imax-1 || j==0 || j==jmax-1){
+                H_z[i + j*jmax + k*jmax*kmax] = 0;
+            }
+            else{
+E_z[i + j*jmax + k*jmax*kmax] = E_z[i + j*jmax + k*jmax*kmax]       
+                + factor*(H_y[i + j*jmax + k*jmax*kmax]-H_y[i-1 + j*jmax + k*jmax*kmax])
+                - factor*(H_x[i + j*jmax + k*jmax*kmax]-H_x[i + (j-1)*jmax + k*jmax*kmax]);
+            }
+        }
 }
 
 
@@ -153,14 +257,13 @@ void propagate_fields(Fields *pFields, Parameters *pParams){
     float time_counter;
     for(time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step){
         //below should be parallelized.
-        update_H_field(pFields->H_x, pFields->E_y, pFields-> E_z, pParams); // need & ?  //H_x
-        update_H_field(pFields->H_y, pFields->E_z, pFields-> E_x, pParams); // need & ? //H_y
-        update_H_field(pFields->H_z, pFields->E_x, pFields-> E_y, pParams); // need & ? //H_z
+        update_H_field(pFields->H_x, pFields->E_y, pFields-> E_z, pParams);   //H_x
+        update_H_field(pFields->H_y, pFields->E_z, pFields-> E_x, pParams);  //H_y
+        update_H_field(pFields->H_z, pFields->E_x, pFields-> E_y, pParams);  //H_z
 
-        update_E_field(pFields->E_x, pFields->H_z, pFields-> H_y, pParams); // need & ? //E_x
-        update_E_field(pFields->E_y, pFields->H_x, pFields-> H_z, pParams); // need & ? //E_y
-        update_E_field(pFields->E_z, pFields->H_y, pFields-> H_x, pParams); // need & ? should check math // E_z
-
+        update_E_field(pFields->E_x, pFields->H_z, pFields-> H_y, pParams);  //E_x
+        update_E_field(pFields->E_y, pFields->H_x, pFields-> H_z, pParams);  //E_y
+        update_E_field(pFields->E_z, pFields->H_y, pFields-> H_x, pParams);  //should check math // E_z
 
     }
 }
@@ -188,7 +291,7 @@ void free_parameters(Parameters *parameters)
 
 int main(int argc, char **argv)
 {
-  printf("Welcome into our microwave oven simulation engine ! \n");
+  printf("Welcome into our microwave oven simulation engine! \n");
 
   if(argc != 2){
     perror("This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
@@ -197,7 +300,7 @@ int main(int argc, char **argv)
 
 
   printf("Loading the parameters...\n");
-  Parameters *pParameters = load_parameters(argv[1]);  // mParameters ?
+  Parameters *pParameters = load_parameters(argv[1]);
   printf("width: %f \n", pParameters->width);
   printf("height: %f \n", pParameters->height);
   printf("length: %f \n", pParameters->length);
@@ -210,13 +313,13 @@ int main(int argc, char **argv)
         return EXIT_FAILURE;
     }
 
-  Fields *pFields = initialize_fields();
+  Fields *pFields = initialize_fields(pParameters);
   set_initial_conditions(pFields);
   propagate_fields(pFields, pParameters);
 
   printf("Freeing memory...\n");
   // Free allocated spaces
-  free_parameters(pParameters);
+  free_parameters(pParameters); // free parameters too
   
   printf("Simulation complete!\n");
   return 0;
