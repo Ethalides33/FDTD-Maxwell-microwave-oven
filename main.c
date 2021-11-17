@@ -226,10 +226,10 @@ void set_initial_conditions(double *E_y, Parameters *params)
     {
         for (uint j = 0; j < params->maxj; ++j)
         {
-            for (uint k = 0; k < params->maxk; ++i)
+            for (uint k = 0; k < params->maxk; ++k)
             {
-                assert(i + j * params->maxj + k * params->maxk * params->maxj <= params->maxi * params->maxj * params->maxk);
-                E_y[i + j * params->maxj + k * params->maxk * params->maxj] = sin(PI * i * params->spatial_step / params->width) * sin(PI * k * params->spatial_step / params->length);
+                assert(i + j*params->maxi + k * params->maxi * params->maxj<= params->maxi * params->maxj * params->maxk);
+                E_y[i + j*params->maxi + k * params->maxi * params->maxj] = sin(PI * i * params->spatial_step / params->width) * sin(PI * k * params->spatial_step / params->length);
             }
         }
     }
@@ -245,11 +245,11 @@ void update_H_x_field(Parameters *params, double *H_x, double *E_y, double *E_z)
             {
                 if (i == 0 || i == params->maxi - 1)
                 {
-                    H_x[i + j * params->maxj + k * params->maxj * params->maxk] = 0;
+                    H_x[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    H_x[i + j * params->maxj + k * params->maxj * params->maxk] = H_x[i + j * params->maxj + k * params->maxj * params->maxk] + factor * (E_y[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_y[i + j * params->maxj + k * params->maxj * params->maxk]) - factor * (E_z[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_z[i + j * params->maxj + k * params->maxj * params->maxk]);
+                    H_x[i + j*params->maxi + k * params->maxi * params->maxj] = H_x[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (E_y[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_y[i + j*params->maxi + k * params->maxi * params->maxj]) - factor * (E_z[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_z[i + j*params->maxi + k * params->maxi * params->maxj]);
                 }
             }
 }
@@ -265,11 +265,11 @@ void update_H_y_field(Parameters *params, double *H_y, double *E_z, double *E_x)
             {
                 if (j == 0 || j == params->maxj - 1)
                 {
-                    H_y[i + j * params->maxj + k * params->maxj * params->maxk] = 0;
+                    H_y[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    H_y[i + j * params->maxj + k * params->maxj * params->maxk] = H_y[i + j * params->maxj + k * params->maxj * params->maxk] + factor * (E_z[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_z[i + j * params->maxj + k * params->maxj * params->maxk]) - factor * (E_x[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_x[i + j * params->maxj + k * params->maxj * params->maxk]);
+                    H_y[i + j*params->maxi + k * params->maxi * params->maxj] = H_y[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (E_z[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_z[i + j*params->maxi + k * params->maxi * params->maxj]) - factor * (E_x[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_x[i + j*params->maxi + k * params->maxi * params->maxj]);
                 }
             }
 }
@@ -285,11 +285,11 @@ void update_H_z_field(Parameters *params, double *H_z, double *E_x, double *E_y)
             {
                 if (k == 0 || k == params->maxk - 1)
                 {
-                    H_z[i + j * params->maxj + k * params->maxj * params->maxk] = 0;
+                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    H_z[i + j * params->maxj + k * params->maxj * params->maxk] = H_z[i + j * params->maxj + k * params->maxj * params->maxk] + factor * (E_x[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_x[i + j * params->maxj + k * params->maxj * params->maxk]) - factor * (E_y[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_y[i + j * params->maxj + k * params->maxj * params->maxk]);
+                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = H_z[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (E_x[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_x[i + j*params->maxi + k * params->maxi * params->maxj]) - factor * (E_y[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_y[i + j*params->maxi + k * params->maxi * params->maxj]);
                 }
             }
 }
@@ -304,11 +304,11 @@ void update_E_x_field(Parameters *params, double *E_x, double *H_z, double *H_y)
             {
                 if (j == 0 || j == params->maxj - 1 || k == 0 || k == params->maxk - 1)
                 {
-                    H_z[i + j * params->maxj + k * params->maxj * params->maxk] = 0;
+                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    E_x[i + j * params->maxj + k * params->maxj * params->maxk] = E_x[i + j * params->maxj + k * params->maxj * params->maxk] + factor * (H_z[i + j * params->maxj + k * params->maxj * params->maxk] - H_z[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]) - factor * (H_y[i + j * params->maxj + k * params->maxj * params->maxk] - H_y[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]);
+                    E_x[i + j*params->maxi + k * params->maxi * params->maxj] = E_x[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (H_z[i + j*params->maxi + k * params->maxi * params->maxj] - H_z[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]) - factor * (H_y[i + j*params->maxi + k * params->maxi * params->maxj] - H_y[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]);
                 }
             }
 }
@@ -324,11 +324,11 @@ void update_E_y_field(Parameters *params, double *E_y, double *H_x, double *H_z)
             {
                 if (i == 0 || i == params->maxi - 1 || k == 0 || k == params->maxk - 1)
                 {
-                    H_z[i + j * params->maxj + k * params->maxj * params->maxk] = 0;
+                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    E_y[i + j * params->maxj + k * params->maxj * params->maxk] = E_y[i + j * params->maxj + k * params->maxj * params->maxk] + factor * (H_x[i + j * params->maxj + k * params->maxj * params->maxk] - H_x[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]) - factor * (H_z[i + j * params->maxj + k * params->maxj * params->maxk] - H_z[i - 1 + j * params->maxj + k * params->maxj * params->maxk]);
+                    E_y[i + j*params->maxi + k * params->maxi * params->maxj] = E_y[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (H_x[i + j*params->maxi + k * params->maxi * params->maxj] - H_x[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]) - factor * (H_z[i + j*params->maxi + k * params->maxi * params->maxj] - H_z[i - 1 + j * params->maxj + k * params->maxj * params->maxk]);
                 }
             }
 }
@@ -344,11 +344,11 @@ void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
             {
                 if (i == 0 || i == params->maxi - 1 || j == 0 || j == params->maxj - 1)
                 {
-                    E_z[i + j * params->maxj + k * params->maxj * params->maxk] = 0;
+                    E_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    E_z[i + j * params->maxj + k * params->maxj * params->maxk] = E_z[i + j * params->maxj + k * params->maxj * params->maxk] + factor * (H_y[i + j * params->maxj + k * params->maxj * params->maxk] - H_y[i - 1 + j * params->maxj + k * params->maxj * params->maxk]) - factor * (H_x[i + j * params->maxj + k * params->maxj * params->maxk] - H_x[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]);
+                    E_z[i + j*params->maxi + k * params->maxi * params->maxj] = E_z[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (H_y[i + j*params->maxi + k * params->maxi * params->maxj] - H_y[i - 1 + j * params->maxj + k * params->maxj * params->maxk]) - factor * (H_x[i + j*params->maxi + k * params->maxi * params->maxj] - H_x[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]);
                 }
             }
 }
