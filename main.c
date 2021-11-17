@@ -360,15 +360,8 @@ void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
 
 void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
 {
-    int dims[] = {pParams->length, pParams->width, pParams->height};
+    int dims[] = {pParams->maxi, pParams->maxj, pParams->maxk};
     int ndims = 3;
-
-    DBPutQuadvar1(db, "E_x", DB_MESHNAME, pFields->E_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(db, "E_y", DB_MESHNAME, pFields->E_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(db, "E_z", DB_MESHNAME, pFields->E_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(db, "H_x", DB_MESHNAME, pFields->H_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(db, "H_y", DB_MESHNAME, pFields->H_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(db, "H_z", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
 
     float time_counter;
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step)
@@ -383,36 +376,44 @@ void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
         update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
         update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
     }
+
+    DBPutQuadvar1(db, "ex", DB_MESHNAME, pFields->E_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(db, "ey", DB_MESHNAME, pFields->E_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(db, "ez", DB_MESHNAME, pFields->E_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(db, "hx", DB_MESHNAME, pFields->H_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(db, "hy", DB_MESHNAME, pFields->H_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(db, "hz", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
 }
 
 /** Draw the oven mesh with all the girds **/
 void draw_oven(Parameters *params, DBfile *db)
 {
     //TODO: Maybe create a Free to be able to free these once written?
-    float *x = Malloc(params->maxi * sizeof(float));
-    float *y = Malloc(params->maxj * sizeof(float));
-    float *z = Malloc(params->maxk * sizeof(float));
+    double *x = Malloc(params->maxi * sizeof(double));
+    double *y = Malloc(params->maxj * sizeof(double));
+    double *z = Malloc(params->maxk * sizeof(double));
 
     //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
+    double dx = params->spatial_step;
     for (int i = 0; i < params->maxi; ++i)
     {
-        x[i] = i * params->spatial_step;
+        x[i] = i * dx;
     }
 
     for (int i = 0; i < params->maxj; ++i)
     {
-        y[i] = i * params->spatial_step;
+        y[i] = i * dx;
     }
 
     for (int i = 0; i < params->maxk; ++i)
     {
-        z[i] = i * params->spatial_step;
+        z[i] = i * dx;
     }
 
-    int dims[] = {params->length, params->width, params->height};
+    int dims[] = {params->maxi, params->maxj, params->maxk};
     int ndims = 3;
-    float *cords[] = {x, y, z};
-    DBPutQuadmesh(db, "oven", NULL, cords, dims, ndims, DB_DOUBLE, DB_COLLINEAR, NULL);
+    double *cords[] = {x, y, z};
+    DBPutQuadmesh(db, DB_MESHNAME, NULL, cords, dims, ndims, DB_DOUBLE, DB_COLLINEAR, NULL);
 }
 
 /**
