@@ -226,10 +226,10 @@ void set_initial_conditions(double *E_y, Parameters *params)
     {
         for (uint j = 0; j < params->maxj; ++j)
         {
-            for (uint k = 0; k < params->maxk; ++k)
+            for (uint k = 0; k < params->maxk; ++k) // warning, wrong axes from figure so changed here vvvvvv 
             {
                 assert(i + j*params->maxi + k * params->maxi * params->maxj<= params->maxi * params->maxj * params->maxk);
-                E_y[i + j*params->maxi + k * params->maxi * params->maxj] = sin(PI * i * params->spatial_step / params->width) * sin(PI * k * params->spatial_step / params->length);
+                E_y[i + j*params->maxi + k * params->maxi * params->maxj] = sin(PI * j * params->spatial_step / params->width) * sin(PI * i * params->spatial_step / params->length);
             }
         }
     }
@@ -366,8 +366,9 @@ void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
     DBPutQuadvar1(db, "H_z", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
 
     float time_counter;
-    /*for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step)
+    for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step)
     {
+        printf("time: %f s\n", time_counter); 
         //below should be parallelized.
         update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
         update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
@@ -376,7 +377,7 @@ void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
         update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
         update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
         update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
-    }*/
+    }
 }
 
 /** Draw the oven mesh with all the girds **/
@@ -390,17 +391,17 @@ void draw_oven(Parameters *params, DBfile *db)
     //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
     for (int i = 0; i < params->maxi; ++i)
     {
-        x[i] = i;
+        x[i] = i*params->spatial_step;
     }
 
     for (int i = 0; i < params->maxj; ++i)
     {
-        y[i] = i;
+        y[i] = i*params->spatial_step;
     }
 
     for (int i = 0; i < params->maxk; ++i)
     {
-        z[i] = i;
+        z[i] = i*params->spatial_step;
     }
 
     int dims[] = {params->length, params->width, params->height};
