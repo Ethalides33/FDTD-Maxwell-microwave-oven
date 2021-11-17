@@ -86,6 +86,8 @@ typedef struct fields
  *      This structure allow us to store each allocated object
  *      into a chained list with a LiFo strategy so when we
  *      free up memory we take care of the inner most objects
+ * Author:
+ *      Anonym genius
 **/
 typedef struct chainedAllocated
 {
@@ -142,12 +144,15 @@ void *Malloc(size_t size)
     {
         allocatedLs = malloc(sizeof(ChainedAllocated));
     }
+    else
+    {
+        ChainedAllocated *successor = malloc(sizeof(ChainedAllocated));
+        successor->previous = allocatedLs;
+        allocatedLs = successor;
+    }
     void *ptr = malloc(size);
 
     allocatedLs->ptr = ptr;
-    ChainedAllocated *successor = malloc(sizeof(ChainedAllocated));
-    allocatedLs->previous = allocatedLs;
-    allocatedLs = successor;
 
     if (!ptr)
     {
@@ -226,10 +231,10 @@ void set_initial_conditions(double *E_y, Parameters *params)
     {
         for (uint j = 0; j < params->maxj; ++j)
         {
-            for (uint k = 0; k < params->maxk; ++k) // warning, wrong axes from figure so changed here vvvvvv 
+            for (uint k = 0; k < params->maxk; ++k) // warning, wrong axes from figure so changed here vvvvvv
             {
-                assert(i + j*params->maxi + k * params->maxi * params->maxj<= params->maxi * params->maxj * params->maxk);
-                E_y[i + j*params->maxi + k * params->maxi * params->maxj] = sin(PI * j * params->spatial_step / params->width) * sin(PI * i * params->spatial_step / params->length);
+                assert(i + j * params->maxi + k * params->maxi * params->maxj <= params->maxi * params->maxj * params->maxk);
+                E_y[i + j * params->maxi + k * params->maxi * params->maxj] = sin(PI * j * params->spatial_step / params->width) * sin(PI * i * params->spatial_step / params->length);
             }
         }
     }
@@ -245,11 +250,11 @@ void update_H_x_field(Parameters *params, double *H_x, double *E_y, double *E_z)
             {
                 if (i == 0 || i == params->maxi - 1)
                 {
-                    H_x[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
+                    H_x[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    H_x[i + j*params->maxi + k * params->maxi * params->maxj] = H_x[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (E_y[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_y[i + j*params->maxi + k * params->maxi * params->maxj]) - factor * (E_z[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_z[i + j*params->maxi + k * params->maxi * params->maxj]);
+                    H_x[i + j * params->maxi + k * params->maxi * params->maxj] = H_x[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (E_y[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_y[i + j * params->maxi + k * params->maxi * params->maxj]) - factor * (E_z[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_z[i + j * params->maxi + k * params->maxi * params->maxj]);
                 }
             }
 }
@@ -265,11 +270,11 @@ void update_H_y_field(Parameters *params, double *H_y, double *E_z, double *E_x)
             {
                 if (j == 0 || j == params->maxj - 1)
                 {
-                    H_y[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
+                    H_y[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    H_y[i + j*params->maxi + k * params->maxi * params->maxj] = H_y[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (E_z[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_z[i + j*params->maxi + k * params->maxi * params->maxj]) - factor * (E_x[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_x[i + j*params->maxi + k * params->maxi * params->maxj]);
+                    H_y[i + j * params->maxi + k * params->maxi * params->maxj] = H_y[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (E_z[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_z[i + j * params->maxi + k * params->maxi * params->maxj]) - factor * (E_x[i + j * params->maxj + (k + 1) * params->maxj * params->maxk] - E_x[i + j * params->maxi + k * params->maxi * params->maxj]);
                 }
             }
 }
@@ -285,11 +290,11 @@ void update_H_z_field(Parameters *params, double *H_z, double *E_x, double *E_y)
             {
                 if (k == 0 || k == params->maxk - 1)
                 {
-                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
+                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = H_z[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (E_x[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_x[i + j*params->maxi + k * params->maxi * params->maxj]) - factor * (E_y[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_y[i + j*params->maxi + k * params->maxi * params->maxj]);
+                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = H_z[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (E_x[i + (j + 1) * params->maxj + k * params->maxj * params->maxk] - E_x[i + j * params->maxi + k * params->maxi * params->maxj]) - factor * (E_y[i + 1 + j * params->maxj + k * params->maxj * params->maxk] - E_y[i + j * params->maxi + k * params->maxi * params->maxj]);
                 }
             }
 }
@@ -304,11 +309,11 @@ void update_E_x_field(Parameters *params, double *E_x, double *H_z, double *H_y)
             {
                 if (j == 0 || j == params->maxj - 1 || k == 0 || k == params->maxk - 1)
                 {
-                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
+                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    E_x[i + j*params->maxi + k * params->maxi * params->maxj] = E_x[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (H_z[i + j*params->maxi + k * params->maxi * params->maxj] - H_z[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]) - factor * (H_y[i + j*params->maxi + k * params->maxi * params->maxj] - H_y[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]);
+                    E_x[i + j * params->maxi + k * params->maxi * params->maxj] = E_x[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (H_z[i + j * params->maxi + k * params->maxi * params->maxj] - H_z[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]) - factor * (H_y[i + j * params->maxi + k * params->maxi * params->maxj] - H_y[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]);
                 }
             }
 }
@@ -324,11 +329,11 @@ void update_E_y_field(Parameters *params, double *E_y, double *H_x, double *H_z)
             {
                 if (i == 0 || i == params->maxi - 1 || k == 0 || k == params->maxk - 1)
                 {
-                    H_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
+                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    E_y[i + j*params->maxi + k * params->maxi * params->maxj] = E_y[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (H_x[i + j*params->maxi + k * params->maxi * params->maxj] - H_x[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]) - factor * (H_z[i + j*params->maxi + k * params->maxi * params->maxj] - H_z[i - 1 + j * params->maxj + k * params->maxj * params->maxk]);
+                    E_y[i + j * params->maxi + k * params->maxi * params->maxj] = E_y[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (H_x[i + j * params->maxi + k * params->maxi * params->maxj] - H_x[i + j * params->maxj + (k - 1) * params->maxj * params->maxk]) - factor * (H_z[i + j * params->maxi + k * params->maxi * params->maxj] - H_z[i - 1 + j * params->maxj + k * params->maxj * params->maxk]);
                 }
             }
 }
@@ -344,11 +349,11 @@ void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
             {
                 if (i == 0 || i == params->maxi - 1 || j == 0 || j == params->maxj - 1)
                 {
-                    E_z[i + j*params->maxi + k * params->maxi * params->maxj] = 0;
+                    E_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
                 }
                 else
                 {
-                    E_z[i + j*params->maxi + k * params->maxi * params->maxj] = E_z[i + j*params->maxi + k * params->maxi * params->maxj] + factor * (H_y[i + j*params->maxi + k * params->maxi * params->maxj] - H_y[i - 1 + j * params->maxj + k * params->maxj * params->maxk]) - factor * (H_x[i + j*params->maxi + k * params->maxi * params->maxj] - H_x[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]);
+                    E_z[i + j * params->maxi + k * params->maxi * params->maxj] = E_z[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (H_y[i + j * params->maxi + k * params->maxi * params->maxj] - H_y[i - 1 + j * params->maxj + k * params->maxj * params->maxk]) - factor * (H_x[i + j * params->maxi + k * params->maxi * params->maxj] - H_x[i + (j - 1) * params->maxj + k * params->maxj * params->maxk]);
                 }
             }
 }
@@ -368,7 +373,7 @@ void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
     float time_counter;
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step)
     {
-        printf("time: %f s\n", time_counter); 
+        printf("time: %f s\n", time_counter);
         //below should be parallelized.
         update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
         update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
@@ -391,17 +396,17 @@ void draw_oven(Parameters *params, DBfile *db)
     //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
     for (int i = 0; i < params->maxi; ++i)
     {
-        x[i] = i*params->spatial_step;
+        x[i] = i * params->spatial_step;
     }
 
     for (int i = 0; i < params->maxj; ++i)
     {
-        y[i] = i*params->spatial_step;
+        y[i] = i * params->spatial_step;
     }
 
     for (int i = 0; i < params->maxk; ++i)
     {
-        z[i] = i*params->spatial_step;
+        z[i] = i * params->spatial_step;
     }
 
     int dims[] = {params->length, params->width, params->height};
