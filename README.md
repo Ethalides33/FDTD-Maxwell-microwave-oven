@@ -79,4 +79,15 @@ When runned with a good parameters file , the programm produces a `result.silo` 
 * ? (check if appropriate) Add -> Mesh -> mesh
 * ? (check if appropriate) Add -> Pseudocolor -> u
 
+## Debug with gdb
+In order to debug the code with gdb, use the following commands:
+
+
+```bash
+$ ./make debug
+$ gdb --args ./microwave ./params.txt
+```
+
+
+ENJOY!!!
 

@@ -14,6 +14,7 @@
 #include <math.h>
 #include <silo.h>
 #include <string.h>
+#include <assert.h>
 
 #define DB_FILENAME "result.silo"
 #define DB_MESHNAME "mesh"
@@ -223,11 +224,12 @@ void set_initial_conditions(double *E_y, Parameters *params)
 {
     for (uint i = 0; i < params->maxi; ++i)
     {
-        for (uint j = 0; j < params->maxj ^ 2; j += params->maxj)
+        for (uint j = 0; j < params->maxj; ++j)
         {
             for (uint k = 0; k < params->maxk; ++i)
             {
-                E_y[i + j + k * params->maxk * params->maxj] = sin(1 * PI * i * params->spatial_step / params->width) * sin(1 * PI * k * params->spatial_step / params->length);
+                assert(i + j * params->maxj + k * params->maxk * params->maxj <= params->maxi * params->maxj * params->maxk);
+                E_y[i + j * params->maxj + k * params->maxk * params->maxj] = sin(PI * i * params->spatial_step / params->width) * sin(PI * k * params->spatial_step / params->length);
             }
         }
     }
@@ -364,7 +366,7 @@ void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
     DBPutQuadvar1(db, "H_z", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
 
     float time_counter;
-    for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step)
+    /*for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step)
     {
         //below should be parallelized.
         update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
@@ -374,7 +376,7 @@ void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
         update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
         update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
         update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
-    }
+    }*/
 }
 
 /** Draw the oven mesh with all the girds **/

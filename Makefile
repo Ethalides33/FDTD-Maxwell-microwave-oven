@@ -7,6 +7,9 @@ all:
 h5:
 	gcc ${SRC} -lm -lsiloh5 -std=c99 -o ${EXE}
 
+debug:
+	gcc ${SRC} -g -lm -lsiloh5 -std=c99 -o ${EXE}
+
 parallel:
 	# Check to add MPI library ?
 	gcc ${SRC} -lm -lsilo -fopenmp -std=c99 -o ${EXE}
