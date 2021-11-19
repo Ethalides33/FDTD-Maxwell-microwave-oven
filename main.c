@@ -227,11 +227,11 @@ Fields *initialize_fields(Parameters *params)
 /** Sets the initial field as asked in Question 3.a. **/
 void set_initial_conditions(double *E_y, Parameters *params)
 {
-    for (uint i = 0; i < params->maxi; ++i)
+    for (uint i = 1; i < params->maxi-1; ++i)
     {
-        for (uint j = 0; j < params->maxj; ++j)
+        for (uint j = 1; j < params->maxj-1; ++j)
         {
-            for (uint k = 0; k < params->maxk; ++k) // warning, wrong axes from figure so changed here vvvvvv
+            for (uint k = 1; k < params->maxk-1; ++k) // warning, wrong axes from figure so changed here vvvvvv
             {
                 assert(i + j * params->maxi + k * params->maxi * params->maxj <= params->maxi * params->maxj * params->maxk);
                 E_y[i + j * params->maxi + k * params->maxi * params->maxj] = sin(PI * j * params->spatial_step / params->width) * sin(PI * i * params->spatial_step / params->length);
@@ -244,9 +244,9 @@ void update_H_x_field(Parameters *params, double *H_x, double *E_y, double *E_z)
 {
     int i, j, k;
     double factor = params->time_step / (MU * params->spatial_step);
-    for (i = 0; i < params->maxi; i++)
-        for (j = 0; j < params->maxj; j++)
-            for (k = 0; k < params->maxk; k++)
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
             {
                 if (i == 0 || i == params->maxi - 1)
                 {
@@ -264,9 +264,9 @@ void update_H_y_field(Parameters *params, double *H_y, double *E_z, double *E_x)
 
     int i, j, k;
     double factor = params->time_step / (MU * params->spatial_step);
-    for (i = 0; i < params->maxi; i++)
-        for (j = 0; j < params->maxj; j++)
-            for (k = 0; k < params->maxk; k++)
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
             {
                 if (j == 0 || j == params->maxj - 1)
                 {
@@ -284,9 +284,9 @@ void update_H_z_field(Parameters *params, double *H_z, double *E_x, double *E_y)
 
     int i, j, k;
     double factor = params->time_step / (MU * params->spatial_step);
-    for (i = 0; i < params->maxi; i++)
-        for (j = 0; j < params->maxj; j++)
-            for (k = 0; k < params->maxk; k++)
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
             {
                 if (k == 0 || k == params->maxk - 1)
                 {
@@ -303,9 +303,9 @@ void update_E_x_field(Parameters *params, double *E_x, double *H_z, double *H_y)
 {
     int i, j, k;
     double factor = params->time_step / (EPSILON * params->spatial_step);
-    for (i = 0; i < params->maxi; i++)
-        for (j = 0; j < params->maxj; j++)
-            for (k = 0; k < params->maxk; k++)
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
             {
                 if (j == 0 || j == params->maxj - 1 || k == 0 || k == params->maxk - 1)
                 {
@@ -323,9 +323,9 @@ void update_E_y_field(Parameters *params, double *E_y, double *H_x, double *H_z)
 
     int i, j, k;
     double factor = params->time_step / (EPSILON * params->spatial_step);
-    for (i = 0; i < params->maxi; i++)
-        for (j = 0; j < params->maxj; j++)
-            for (k = 0; k < params->maxk; k++)
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
             {
                 if (i == 0 || i == params->maxi - 1 || k == 0 || k == params->maxk - 1)
                 {
@@ -343,9 +343,9 @@ void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
 
     int i, j, k;
     double factor = params->time_step / (EPSILON * params->spatial_step);
-    for (i = 0; i < params->maxi; i++)
-        for (j = 0; j < params->maxj; j++)
-            for (k = 0; k < params->maxk; k++)
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
             {
                 if (i == 0 || i == params->maxi - 1 || j == 0 || j == params->maxj - 1)
                 {
@@ -359,7 +359,7 @@ void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
 }
 
 
-void write_silo(DBfile *db, Fields *pFields, int iteration, int* dims, int ndims){
+void write_silo(Fields *pFields, int iteration, int* dims, int ndims){
 
     char filename[100];
     sprintf(filename, "output%04d.silo", iteration);
@@ -380,26 +380,25 @@ void write_silo(DBfile *db, Fields *pFields, int iteration, int* dims, int ndims
     DBClose(dbfile);
 }
 
-void propagate_fields(Fields *pFields, Parameters *pParams, DBfile *db)
+void propagate_fields(Fields *pFields, Parameters *pParams)
 {
     int dims[] = {pParams->maxi, pParams->maxj, pParams->maxk};
     int ndims = 3;
 
-    float time_counter;
+    double time_counter;
     int iteration = 0;
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
     {
-        printf("time: %f s\n", time_counter);
+        printf("time: %lf s\n", time_counter);
         //below should be parallelized.
         update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
         update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
         update_H_z_field(pParams, pFields->H_z, pFields->E_x, pFields->E_y); //H_z
-        printf("reached");
 
         update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
         update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
         update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
-        write_silo(db, pFields, iteration, dims, ndims);
+        write_silo(pFields, iteration, dims, ndims);
     }
 }
 
@@ -481,13 +480,19 @@ int main(int argc, const char *argv[])
 
     printf("Creating mesh\n");
     draw_oven(pParameters, db);
+    DBClose(db);
 
     printf("Setting initial conditions\n");
     set_initial_conditions(pFields->E_y, pParameters);
+    for (int i = 1; i < pParameters->maxi-1; i++)
+        for (int j = 1; j < pParameters->maxj-1; j++)
+            for (int k = 1; k < pParameters->maxk-1; k++)
+            {
+                printf("%lf \n", pFields->E_y[i + j*pParameters->maxi + k*pParameters->maxi*pParameters->maxj]);
+            }
     printf("Launching simulation\n");
-    propagate_fields(pFields, pParameters, db);
+    propagate_fields(pFields, pParameters);
 
-    DBClose(db);
     printf("Freeing memory...\n");
     freeAll();
 
