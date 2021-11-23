@@ -224,175 +224,140 @@ Fields *initialize_fields(Parameters *params)
     return pFields;
 }
 
-/** Sets the initial field as asked in Question 3.a. **/
-void set_initial_conditions(double *E_y, Parameters *params)
+/** Returns the index of the i/j/k th element **/
+size_t idx(Parameters *params, size_t i, size_t j, size_t k)
 {
-    for (uint i = 1; i < params->maxi-1; ++i)
+    return i + j * params->maxi + k * params->maxi * params->maxj;
+}
+
+/** Sets the initial field as asked in Question 3.a. **/
+void set_initial_conditions(double *E_y, Parameters *p)
+{
+    for (size_t i = 1; i < p->maxi - 1; ++i)
     {
-        for (uint j = 1; j < params->maxj-1; ++j)
+        for (size_t j = 0; j < p->maxj; ++j)
         {
-            for (uint k = 1; k < params->maxk-1; ++k) // warning, wrong axes from figure so changed here vvvvvv
+            for (size_t k = 1; k < p->maxk - 1; ++k)
             {
-                assert(i + j * params->maxi + k * params->maxi * params->maxj <= params->maxi * params->maxj * params->maxk);
-                E_y[i + j * params->maxi + k * params->maxi * params->maxj] = sin(PI * j * params->spatial_step / params->width) * sin(PI * i * params->spatial_step / params->length);
+                assert(i + j * p->maxi + k * p->maxi * p->maxj <= p->maxi * p->maxj * p->maxk);
+                E_y[idx(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length);
             }
         }
     }
 }
 
-void update_H_x_field(Parameters *params, double *H_x, double *E_y, double *E_z)
+void update_H_x_field(Parameters *p, double *H_x, double *E_y, double *E_z)
 {
     int i, j, k;
-    double factor = params->time_step / (MU * params->spatial_step);
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    double factor = p->time_step / (MU * p->spatial_step);
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 0; j < p->maxj - 1; j++)
+            for (k = 0; k < p->maxk - 1; k++)
             {
-                if (i == 0 || i == params->maxi - 1)
-                {
-                    H_x[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
-                }
-                else
-                {
-                    H_x[i + j * params->maxi + k * params->maxi * params->maxj] = H_x[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (E_y[i + j * params->maxi + (k + 1) * params->maxi * params->maxj] - E_y[i + j * params->maxi + k * params->maxi * params->maxj]) - factor * (E_z[i + (j + 1) * params->maxi + k * params->maxi * params->maxj] - E_z[i + j * params->maxi + k * params->maxi * params->maxj]);
-                }
+                H_x[idx(p, i, j, k)] = H_x[idx(p, i, j, k)] + factor * (E_y[idx(p, i, j, k + 1)] - E_y[idx(p, i, j, k)]) - factor * (E_z[idx(p, i, j + 1, k)] - E_z[idx(p, i, j, k)]);
             }
 }
 
-void update_H_y_field(Parameters *params, double *H_y, double *E_z, double *E_x)
+void update_H_y_field(Parameters *p, double *H_y, double *E_z, double *E_x)
 {
 
     int i, j, k;
-    double factor = params->time_step / (MU * params->spatial_step);
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    double factor = p->time_step / (MU * p->spatial_step);
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                if (j == 0 || j == params->maxj - 1)
-                {
-                    H_y[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
-                }
-                else
-                {
-                    H_y[i + j * params->maxi + k * params->maxi * params->maxj] = H_y[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (E_z[i + 1 + j * params->maxi + k * params->maxi * params->maxj] - E_z[i + j * params->maxi + k * params->maxi * params->maxj]) - factor * (E_x[i + j * params->maxi + (k + 1) * params->maxi * params->maxj] - E_x[i + j * params->maxi + k * params->maxi * params->maxj]);
-                }
+                H_y[idx(p, i, j, k)] = H_y[idx(p, i, j, k)] + factor * (E_z[idx(p, i + 1, j, k)] - E_z[idx(p, i, j, k)]) - factor * (E_x[idx(p, i, j, k + 1)] - E_x[idx(p, i, j, k)]);
             }
 }
 
-void update_H_z_field(Parameters *params, double *H_z, double *E_x, double *E_y)
+void update_H_z_field(Parameters *p, double *H_z, double *E_x, double *E_y)
 {
 
     int i, j, k;
-    double factor = params->time_step / (MU * params->spatial_step);
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    double factor = p->time_step / (MU * p->spatial_step);
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                if (k == 0 || k == params->maxk - 1)
-                {
-                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
-                }
-                else
-                {
-                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = H_z[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (E_x[i + (j + 1) * params->maxi + k * params->maxi * params->maxj] - E_x[i + j * params->maxi + k * params->maxi * params->maxj]) - factor * (E_y[i + 1 + j * params->maxi + k * params->maxi * params->maxj] - E_y[i + j * params->maxi + k * params->maxi * params->maxj]);
-                }
+                H_z[idx(p, i, j, k)] = H_z[idx(p, i, j, k)] + factor * (E_x[idx(p, i, j + 1, k)] - E_x[idx(p, i, j, k)]) - factor * (E_y[idx(p, i + 1, j, k)] - E_y[idx(p, i, j, k)]);
             }
 }
 
-void update_E_x_field(Parameters *params, double *E_x, double *H_z, double *H_y)
+void update_E_x_field(Parameters *p, double *E_x, double *H_z, double *H_y)
 {
     int i, j, k;
-    double factor = params->time_step / (EPSILON * params->spatial_step);
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    double factor = p->time_step / (EPSILON * p->spatial_step);
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                if (j == 0 || j == params->maxj - 1 || k == 0 || k == params->maxk - 1)
-                {
-                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
-                }
-                else
-                {
-                    E_x[i + j * params->maxi + k * params->maxi * params->maxj] = E_x[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (H_z[i + j * params->maxi + k * params->maxi * params->maxj] - H_z[i + (j - 1) * params->maxi + k * params->maxi * params->maxj]) - factor * (H_y[i + j * params->maxi + k * params->maxi * params->maxj] - H_y[i + j * params->maxi + (k - 1) * params->maxi * params->maxj]);
-                }
+                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor * (H_z[idx(p, i, j, k)] - H_z[i + (j - 1) * p->maxi + k * p->maxi * p->maxj]) - factor * (H_y[idx(p, i, j, k)] - H_y[i + j * p->maxi + (k - 1) * p->maxi * p->maxj]);
             }
 }
 
-void update_E_y_field(Parameters *params, double *E_y, double *H_x, double *H_z)
+void update_E_y_field(Parameters *p, double *E_y, double *H_x, double *H_z)
 {
 
     int i, j, k;
-    double factor = params->time_step / (EPSILON * params->spatial_step);
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    double factor = p->time_step / (EPSILON * p->spatial_step);
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                if (i == 0 || i == params->maxi - 1 || k == 0 || k == params->maxk - 1)
-                {
-                    H_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
-                }
-                else
-                {
-                    E_y[i + j * params->maxi + k * params->maxi * params->maxj] = E_y[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (H_x[i + j * params->maxi + k * params->maxi * params->maxj] - H_x[i + j * params->maxi + (k - 1) * params->maxi * params->maxj]) - factor * (H_z[i + j * params->maxi + k * params->maxi * params->maxj] - H_z[i - 1 + j * params->maxi + k * params->maxi * params->maxj]);
-                }
+                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * (H_x[idx(p, i, j, k)] - H_x[i + j * p->maxi + (k - 1) * p->maxi * p->maxj]) - factor * (H_z[idx(p, i, j, k)] - H_z[i - 1 + j * p->maxi + k * p->maxi * p->maxj]);
             }
 }
 
-void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
+void update_E_z_field(Parameters *p, double *E_z, double *H_y, double *H_x)
 {
 
     int i, j, k;
-    double factor = params->time_step / (EPSILON * params->spatial_step);
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    double factor = p->time_step / (EPSILON * p->spatial_step);
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                if (i == 0 || i == params->maxi - 1 || j == 0 || j == params->maxj - 1)
-                {
-                    E_z[i + j * params->maxi + k * params->maxi * params->maxj] = 0;
-                }
-                else
-                {
-                    E_z[i + j * params->maxi + k * params->maxi * params->maxj] = E_z[i + j * params->maxi + k * params->maxi * params->maxj] + factor * (H_y[i + j * params->maxi + k * params->maxi * params->maxj] - H_y[i - 1 + j * params->maxi + k * params->maxi * params->maxj]) - factor * (H_x[i + j * params->maxi + k * params->maxi * params->maxj] - H_x[i + (j - 1) * params->maxi + k * params->maxi * params->maxj]);
-                }
+                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * (H_y[idx(p, i, j, k)] - H_y[i - 1 + j * p->maxi + k * p->maxi * p->maxj]) - factor * (H_x[idx(p, i, j, k)] - H_x[i + (j - 1) * p->maxi + k * p->maxi * p->maxj]);
             }
 }
 
 /** Draw the oven mesh with all the girds **/
-void draw_oven(Parameters *params, DBfile *db)
+void draw_oven(Parameters *p, DBfile *db)
 {
     //TODO: Maybe create a Free to be able to free these once written?
-    double *x = Malloc(params->maxi * sizeof(double));
-    double *y = Malloc(params->maxj * sizeof(double));
-    double *z = Malloc(params->maxk * sizeof(double));
+    double *x = Malloc(p->maxi * sizeof(double));
+    double *y = Malloc(p->maxj * sizeof(double));
+    double *z = Malloc(p->maxk * sizeof(double));
 
     //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
-    double dx = params->spatial_step;
-    for (int i = 0; i < params->maxi; ++i)
+    double dx = p->spatial_step;
+    for (int i = 0; i < p->maxi; ++i)
     {
         x[i] = i * dx;
     }
 
-    for (int i = 0; i < params->maxj; ++i)
+    for (int i = 0; i < p->maxj; ++i)
     {
         y[i] = i * dx;
     }
 
-    for (int i = 0; i < params->maxk; ++i)
+    for (int i = 0; i < p->maxk; ++i)
     {
         z[i] = i * dx;
     }
 
-    int dims[] = {params->maxi, params->maxj, params->maxk};
+    int dims[] = {p->maxi, p->maxj, p->maxk};
     int ndims = 3;
     double *cords[] = {x, y, z};
     DBPutQuadmesh(db, DB_MESHNAME, NULL, cords, dims, ndims, DB_DOUBLE, DB_COLLINEAR, NULL);
 }
 
-void write_silo(Fields *pFields, Parameters *pParams, int iteration, int* dims, int ndims){
+void write_silo(Fields *pFields, Parameters *pParams, int iteration, int *dims, int ndims)
+{
 
     char filename[100];
-    sprintf(filename, "output%04d.silo", iteration);
+    sprintf(filename, "r/output%04d.silo", iteration);
 
     DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
     if (!dbfile)
@@ -412,41 +377,40 @@ void write_silo(Fields *pFields, Parameters *pParams, int iteration, int* dims, 
     DBClose(dbfile);
 }
 
-
-double calculate_electrical_energy(Fields *pFields, Parameters *params){
+double calculate_electrical_energy(Fields *pFields, Parameters *params)
+{
 
     int i, j, k;
     double elec_energy = 0;
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    for (i = 1; i < params->maxi - 1; i++)
+        for (j = 1; j < params->maxj - 1; j++)
+            for (k = 1; k < params->maxk - 1; k++)
             {
-                elec_energy += pow(pFields->E_x[i + j * params->maxi + k * params->maxi * params->maxj],2) + 
-                    pow(pFields->E_y[i + j * params->maxi + k * params->maxi * params->maxj],2) +
-                    pow(pFields->E_z[i + j * params->maxi + k * params->maxi * params->maxj],2);
+                elec_energy += pow(pFields->E_x[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
+                               pow(pFields->E_y[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
+                               pow(pFields->E_z[i + j * params->maxi + k * params->maxi * params->maxj], 2);
             }
 
-    elec_energy *= EPSILON/2.;
+    elec_energy *= EPSILON / 2.;
 
     return elec_energy;
 }
 
-
-
-double calculate_magnetic_energy(Fields *pFields, Parameters *params){
+double calculate_magnetic_energy(Fields *pFields, Parameters *params)
+{
 
     int i, j, k;
     double mag_energy = 0;
-    for (i = 1; i < params->maxi-1; i++)
-        for (j = 1; j < params->maxj-1; j++)
-            for (k = 1; k < params->maxk-1; k++)
+    for (i = 1; i < params->maxi - 1; i++)
+        for (j = 1; j < params->maxj - 1; j++)
+            for (k = 1; k < params->maxk - 1; k++)
             {
-                mag_energy += pow(pFields->H_x[i + j * params->maxi + k * params->maxi * params->maxj],2) + 
-                    pow(pFields->H_y[i + j * params->maxi + k * params->maxi * params->maxj],2) +
-                    pow(pFields->H_z[i + j * params->maxi + k * params->maxi * params->maxj],2);
+                mag_energy += pow(pFields->H_x[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
+                              pow(pFields->H_y[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
+                              pow(pFields->H_z[i + j * params->maxi + k * params->maxi * params->maxj], 2);
             }
 
-    mag_energy *= MU/2.;
+    mag_energy *= MU / 2.;
 
     return mag_energy;
 }
@@ -470,14 +434,13 @@ void propagate_fields(Fields *pFields, Parameters *pParams)
         update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
         update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
 
-        printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
-        printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
-        printf("Tot energy: %0.10f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
+        //printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
+        //printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
+        //printf("Tot energy: %0.10f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
         assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
-        //write_silo(pFields, pParams, iteration, dims, ndims);
+        write_silo(pFields, pParams, iteration, dims, ndims);
     }
 }
-
 
 /**
 ------------------------------------------------------
@@ -517,25 +480,10 @@ int main(int argc, const char *argv[])
     printf("Initializing fields\n");
     Fields *pFields = initialize_fields(pParameters);
 
-    // Open a SILO db
-    //DBfile *db = DBCreate(DB_FILENAME, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
-    //if (!db)
-    //{
-    //    fail("Could not create DB\n");
-    //}
-
     printf("Creating mesh\n");
-    //draw_oven(pParameters, db);
-    //DBClose(db);
 
     printf("Setting initial conditions\n");
     set_initial_conditions(pFields->E_y, pParameters);
-    for (int i = 1; i < pParameters->maxi-1; i++)
-        for (int j = 1; j < pParameters->maxj-1; j++)
-            for (int k = 1; k < pParameters->maxk-1; k++)
-            {
-                //printf("%lf \n", pFields->E_y[i + j*pParameters->maxi + k*pParameters->maxi*pParameters->maxj]);
-            }
     printf("Launching simulation\n");
     propagate_fields(pFields, pParameters);
 
