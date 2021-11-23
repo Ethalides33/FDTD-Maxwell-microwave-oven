@@ -292,7 +292,7 @@ void update_E_x_field(Parameters *p, double *E_x, double *H_z, double *H_y)
         for (j = 1; j < p->maxj - 1; j++)
             for (k = 1; k < p->maxk - 1; k++)
             {
-                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor * (H_z[idx(p, i, j, k)] - H_z[i + (j - 1) * p->maxi + k * p->maxi * p->maxj]) - factor * (H_y[idx(p, i, j, k)] - H_y[i + j * p->maxi + (k - 1) * p->maxi * p->maxj]);
+                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor * (H_z[idx(p, i, j, k)] - H_z[idx(p,i,j-1,k)]) - factor * (H_y[idx(p, i, j, k)] - H_y[idx(p,i,j,k-1)]);
             }
 }
 
@@ -305,7 +305,7 @@ void update_E_y_field(Parameters *p, double *E_y, double *H_x, double *H_z)
         for (j = 1; j < p->maxj - 1; j++)
             for (k = 1; k < p->maxk - 1; k++)
             {
-                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * (H_x[idx(p, i, j, k)] - H_x[i + j * p->maxi + (k - 1) * p->maxi * p->maxj]) - factor * (H_z[idx(p, i, j, k)] - H_z[i - 1 + j * p->maxi + k * p->maxi * p->maxj]);
+                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * (H_x[idx(p, i, j, k)] - H_x[idx(p,i,j,k-1)]) - factor * (H_z[idx(p, i, j, k)] - H_z[idx(p,i-1,j,k)]);
             }
 }
 
@@ -318,7 +318,7 @@ void update_E_z_field(Parameters *p, double *E_z, double *H_y, double *H_x)
         for (j = 1; j < p->maxj - 1; j++)
             for (k = 1; k < p->maxk - 1; k++)
             {
-                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * (H_y[idx(p, i, j, k)] - H_y[i - 1 + j * p->maxi + k * p->maxi * p->maxj]) - factor * (H_x[idx(p, i, j, k)] - H_x[i + (j - 1) * p->maxi + k * p->maxi * p->maxj]);
+                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * (H_y[idx(p, i, j, k)] - H_y[idx(p,i-1,j,k)]) - factor * (H_x[idx(p, i, j, k)] - H_x[idx(p,i,j-1,k)]);
             }
 }
 
