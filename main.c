@@ -358,50 +358,6 @@ void update_E_z_field(Parameters *params, double *E_z, double *H_y, double *H_x)
             }
 }
 
-
-void write_silo(Fields *pFields, int iteration, int* dims, int ndims){
-
-    char filename[100];
-    sprintf(filename, "output%04d.silo", iteration);
-
-    DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
-    if (!dbfile)
-    {
-        fail("Could not create DB\n");
-    }
-
-    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pFields->E_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pFields->E_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pFields->E_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->H_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->H_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-
-    DBClose(dbfile);
-}
-
-void propagate_fields(Fields *pFields, Parameters *pParams)
-{
-    int dims[] = {pParams->maxi, pParams->maxj, pParams->maxk};
-    int ndims = 3;
-
-    double time_counter;
-    int iteration = 0;
-    for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
-    {
-        printf("time: %lf s\n", time_counter);
-        //below should be parallelized.
-        update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
-        update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
-        update_H_z_field(pParams, pFields->H_z, pFields->E_x, pFields->E_y); //H_z
-
-        update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
-        update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
-        update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
-        write_silo(pFields, iteration, dims, ndims);
-    }
-}
-
 /** Draw the oven mesh with all the girds **/
 void draw_oven(Parameters *params, DBfile *db)
 {
@@ -432,6 +388,52 @@ void draw_oven(Parameters *params, DBfile *db)
     double *cords[] = {x, y, z};
     DBPutQuadmesh(db, DB_MESHNAME, NULL, cords, dims, ndims, DB_DOUBLE, DB_COLLINEAR, NULL);
 }
+
+void write_silo(Fields *pFields, Parameters *pParams, int iteration, int* dims, int ndims){
+
+    char filename[100];
+    sprintf(filename, "output%04d.silo", iteration);
+
+    DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
+    if (!dbfile)
+    {
+        fail("Could not create DB\n");
+    }
+
+    draw_oven(pParams, dbfile);
+
+    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pFields->E_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pFields->E_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pFields->E_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->H_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->H_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+
+    DBClose(dbfile);
+}
+
+void propagate_fields(Fields *pFields, Parameters *pParams)
+{
+    int dims[] = {pParams->maxi, pParams->maxj, pParams->maxk};
+    int ndims = 3;
+
+    double time_counter;
+    int iteration = 0;
+    for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
+    {
+        printf("time: %lf s\n", time_counter);
+        //below should be parallelized.
+        update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
+        update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
+        update_H_z_field(pParams, pFields->H_z, pFields->E_x, pFields->E_y); //H_z
+
+        update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
+        update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
+        update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
+        write_silo(pFields, pParams, iteration, dims, ndims);
+    }
+}
+
 
 /**
 ------------------------------------------------------
@@ -472,15 +474,15 @@ int main(int argc, const char *argv[])
     Fields *pFields = initialize_fields(pParameters);
 
     // Open a SILO db
-    DBfile *db = DBCreate(DB_FILENAME, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
-    if (!db)
-    {
-        fail("Could not create DB\n");
-    }
+    //DBfile *db = DBCreate(DB_FILENAME, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
+    //if (!db)
+    //{
+    //    fail("Could not create DB\n");
+    //}
 
     printf("Creating mesh\n");
-    draw_oven(pParameters, db);
-    DBClose(db);
+    //draw_oven(pParameters, db);
+    //DBClose(db);
 
     printf("Setting initial conditions\n");
     set_initial_conditions(pFields->E_y, pParameters);
@@ -488,7 +490,7 @@ int main(int argc, const char *argv[])
         for (int j = 1; j < pParameters->maxj-1; j++)
             for (int k = 1; k < pParameters->maxk-1; k++)
             {
-                printf("%lf \n", pFields->E_y[i + j*pParameters->maxi + k*pParameters->maxi*pParameters->maxj]);
+                //printf("%lf \n", pFields->E_y[i + j*pParameters->maxi + k*pParameters->maxi*pParameters->maxj]);
             }
     printf("Launching simulation\n");
     propagate_fields(pFields, pParameters);
