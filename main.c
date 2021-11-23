@@ -412,6 +412,44 @@ void write_silo(Fields *pFields, Parameters *pParams, int iteration, int* dims, 
     DBClose(dbfile);
 }
 
+
+double calculate_electrical_energy(Fields *pFields, Parameters *params){
+
+    int i, j, k;
+    double elec_energy = 0;
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
+            {
+                elec_energy += pow(pFields->E_x[i + j * params->maxi + k * params->maxi * params->maxj],2) + 
+                    pow(pFields->E_y[i + j * params->maxi + k * params->maxi * params->maxj],2) +
+                    pow(pFields->E_z[i + j * params->maxi + k * params->maxi * params->maxj],2);
+            }
+
+    elec_energy *= EPSILON/2.;
+
+    return elec_energy;
+}
+
+
+
+double calculate_magnetic_energy(Fields *pFields, Parameters *params){
+
+    int i, j, k;
+    double mag_energy = 0;
+    for (i = 1; i < params->maxi-1; i++)
+        for (j = 1; j < params->maxj-1; j++)
+            for (k = 1; k < params->maxk-1; k++)
+            {
+                mag_energy += pow(pFields->H_x[i + j * params->maxi + k * params->maxi * params->maxj],2) + 
+                    pow(pFields->H_y[i + j * params->maxi + k * params->maxi * params->maxj],2) +
+                    pow(pFields->H_z[i + j * params->maxi + k * params->maxi * params->maxj],2);
+            }
+
+    mag_energy *= MU/2.;
+
+    return mag_energy;
+}
 void propagate_fields(Fields *pFields, Parameters *pParams)
 {
     int dims[] = {pParams->maxi, pParams->maxj, pParams->maxk};
@@ -419,9 +457,10 @@ void propagate_fields(Fields *pFields, Parameters *pParams)
 
     double time_counter;
     int iteration = 0;
+    double total_energy = calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams);
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
     {
-        printf("time: %lf s\n", time_counter);
+        printf("time: %0.10f s\n", time_counter);
         //below should be parallelized.
         update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
         update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
@@ -430,7 +469,12 @@ void propagate_fields(Fields *pFields, Parameters *pParams)
         update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
         update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
         update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
-        write_silo(pFields, pParams, iteration, dims, ndims);
+
+        printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
+        printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
+        printf("Tot energy: %0.10f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
+        assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
+        //write_silo(pFields, pParams, iteration, dims, ndims);
     }
 }
 
