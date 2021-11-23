@@ -251,8 +251,8 @@ void update_H_x_field(Parameters *p, double *H_x, double *E_y, double *E_z)
     int i, j, k;
     double factor = p->time_step / (MU * p->spatial_step);
     for (i = 1; i < p->maxi - 1; i++)
-        for (j = 0; j < p->maxj - 1; j++)
-            for (k = 0; k < p->maxk - 1; k++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
                 H_x[idx(p, i, j, k)] = H_x[idx(p, i, j, k)] + factor * (E_y[idx(p, i, j, k + 1)] - E_y[idx(p, i, j, k)]) - factor * (E_z[idx(p, i, j + 1, k)] - E_z[idx(p, i, j, k)]);
             }
@@ -288,11 +288,11 @@ void update_E_x_field(Parameters *p, double *E_x, double *H_z, double *H_y)
 {
     int i, j, k;
     double factor = p->time_step / (EPSILON * p->spatial_step);
-    for (i = 1; i < p->maxi - 1; i++)
+    for (i = 0; i < p->maxi; i++)
         for (j = 1; j < p->maxj - 1; j++)
             for (k = 1; k < p->maxk - 1; k++)
             {
-                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor * (H_z[idx(p, i, j, k)] - H_z[idx(p,i,j-1,k)]) - factor * (H_y[idx(p, i, j, k)] - H_y[idx(p,i,j,k-1)]);
+                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor * (H_z[idx(p, i, j, k)] - H_z[idx(p, i, j - 1, k)]) - factor * (H_y[idx(p, i, j, k)] - H_y[idx(p, i, j, k - 1)]);
             }
 }
 
@@ -302,10 +302,10 @@ void update_E_y_field(Parameters *p, double *E_y, double *H_x, double *H_z)
     int i, j, k;
     double factor = p->time_step / (EPSILON * p->spatial_step);
     for (i = 1; i < p->maxi - 1; i++)
-        for (j = 1; j < p->maxj - 1; j++)
+        for (j = 0; j < p->maxj; j++)
             for (k = 1; k < p->maxk - 1; k++)
             {
-                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * (H_x[idx(p, i, j, k)] - H_x[idx(p,i,j,k-1)]) - factor * (H_z[idx(p, i, j, k)] - H_z[idx(p,i-1,j,k)]);
+                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * (H_x[idx(p, i, j, k)] - H_x[idx(p, i, j, k - 1)]) - factor * (H_z[idx(p, i, j, k)] - H_z[idx(p, i - 1, j, k)]);
             }
 }
 
@@ -316,9 +316,9 @@ void update_E_z_field(Parameters *p, double *E_z, double *H_y, double *H_x)
     double factor = p->time_step / (EPSILON * p->spatial_step);
     for (i = 1; i < p->maxi - 1; i++)
         for (j = 1; j < p->maxj - 1; j++)
-            for (k = 1; k < p->maxk - 1; k++)
+            for (k = 0; k < p->maxk; k++)
             {
-                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * (H_y[idx(p, i, j, k)] - H_y[idx(p,i-1,j,k)]) - factor * (H_x[idx(p, i, j, k)] - H_x[idx(p,i,j-1,k)]);
+                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * (H_y[idx(p, i, j, k)] - H_y[idx(p, i - 1, j, k)]) - factor * (H_x[idx(p, i, j, k)] - H_x[idx(p, i, j - 1, k)]);
             }
 }
 
