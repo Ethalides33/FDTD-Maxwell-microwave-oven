@@ -258,11 +258,11 @@ void update_H_x_field(Parameters *p, double *H_x, double *E_y, double *E_z)
                 double E_z_nextj = 0.0;
 
                 if (k + 1 < p->maxk)
-                    E_y_nextk = E_y[idx(p, i, j, k + 1)];
+                    E_y_nextk = E_y[idx(p, i, j, k + 1)] - E_y[idx(p, i, j, k)];
                 if (j + 1 < p->maxj)
-                    E_z_nextj = E_z[idx(p, i, j + 1, k)];
+                    E_z_nextj = E_z[idx(p, i, j + 1, k)]  - E_z[idx(p, i, j, k)];
 
-                H_x[idx(p, i, j, k)] = H_x[idx(p, i, j, k)] + factor * (E_y_nextk - E_y[idx(p, i, j, k)]) - factor * (E_z_nextj - E_z[idx(p, i, j, k)]);
+                H_x[idx(p, i, j, k)] = H_x[idx(p, i, j, k)] + factor * E_y_nextk - factor * E_z_nextj;
             }
 }
 
@@ -278,11 +278,11 @@ void update_H_y_field(Parameters *p, double *H_y, double *E_z, double *E_x)
                 double E_z_nexti = 0.0;
 
                 if (k + 1 < p->maxk)
-                    E_x_nextk = E_x[idx(p, i, j, k + 1)];
+                    E_x_nextk = E_x[idx(p, i, j, k + 1)] - E_x[idx(p, i, j, k)];
                 if (i + 1 < p->maxi)
-                    E_z_nexti = E_z[idx(p, i + 1, j, k)];
+                    E_z_nexti = E_z[idx(p, i + 1, j, k)] - E_z[idx(p, i, j, k)];
 
-                H_y[idx(p, i, j, k)] = H_y[idx(p, i, j, k)] + factor * (E_z_nexti - E_z[idx(p, i, j, k)]) - factor * (E_x_nextk - E_x[idx(p, i, j, k)]);
+                H_y[idx(p, i, j, k)] = H_y[idx(p, i, j, k)] + factor * E_z_nexti - factor * E_x_nextk;
             }
 }
 
@@ -299,11 +299,11 @@ void update_H_z_field(Parameters *p, double *H_z, double *E_x, double *E_y)
                 double E_y_nexti = 0.0;
 
                 if (i + 1 < p->maxi)
-                    E_y_nexti = E_y[idx(p, i + 1, j, k)];
+                    E_y_nexti = E_y[idx(p, i + 1, j, k)] - E_y[idx(p, i, j, k)];
                 if (j + 1 < p->maxj)
-                    E_x_nextj = E_x[idx(p, i, j + 1, k)];
+                    E_x_nextj = E_x[idx(p, i, j + 1, k)] - E_x[idx(p, i, j, k)];
 
-                H_z[idx(p, i, j, k)] = H_z[idx(p, i, j, k)] + factor * (E_x_nextj - E_x[idx(p, i, j, k)]) - factor * (E_y_nexti - E_y[idx(p, i, j, k)]);
+                H_z[idx(p, i, j, k)] = H_z[idx(p, i, j, k)] + factor * E_x_nextj - factor * E_y_nexti;
             }
 }
 
@@ -319,11 +319,11 @@ void update_E_x_field(Parameters *p, double *E_x, double *H_z, double *H_y)
                 double H_y_prevk = 0.0;
 
                 if (0 < j)
-                    H_z_prevj = H_z[idx(p, i, j - 1, k)];
+                    H_z_prevj = H_z[idx(p, i, j, k)] - H_z[idx(p, i, j - 1, k)];
                 if (0 < k)
-                    H_y_prevk = H_y[idx(p, i, j, k - 1)];
+                    H_y_prevk = H_y[idx(p, i, j, k)] - H_y[idx(p, i, j, k - 1)];
 
-                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor * (H_z[idx(p, i, j, k)] - H_z_prevj) - factor * (H_y[idx(p, i, j, k)] - H_y_prevk);
+                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor *  H_z_prevj - factor * H_y_prevk;
             }
 }
 
@@ -339,11 +339,11 @@ void update_E_y_field(Parameters *p, double *E_y, double *H_x, double *H_z)
                 double H_z_previ = 0.0;
 
                 if (0 < i)
-                    H_z_previ = H_z[idx(p, i - 1, j, k)];
+                    H_z_previ = H_z[idx(p, i, j, k)] - H_z[idx(p, i - 1, j, k)];
                 if (0 < k)
-                    H_x_prevk = H_x[idx(p, i, j, k - 1)];
+                    H_x_prevk = H_x[idx(p, i, j, k)] -  H_x[idx(p, i, j, k - 1)];
 
-                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * (H_x[idx(p, i, j, k)] - H_x_prevk) - factor * (H_z[idx(p, i, j, k)] - H_z_previ);
+                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * H_x_prevk - factor *  H_z_previ;
             }
 }
 
@@ -360,11 +360,11 @@ void update_E_z_field(Parameters *p, double *E_z, double *H_y, double *H_x)
                 double H_x_prevj = 0.0;
 
                 if (0 < i)
-                    H_y_previ = H_y[idx(p, i - 1, j, k)];
+                    H_y_previ = H_y[idx(p, i, j, k)] - H_y[idx(p, i - 1, j, k)];
                 if (0 < j)
-                    H_x_prevj = H_x[idx(p, i, j - 1, k)];
+                    H_x_prevj = H_x[idx(p, i, j, k)] - H_x[idx(p, i, j - 1, k)];
 
-                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * (H_y[idx(p, i, j, k)] - H_y_previ) - factor * (H_x[idx(p, i, j, k)] - H_x_prevj);
+                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * H_y_previ - factor * H_x_prevj;
             }
 }
 
@@ -468,6 +468,8 @@ void propagate_fields(Fields *pFields, Parameters *pParams)
     double time_counter;
     int iteration = 0;
     double total_energy = calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams);
+    write_silo(pFields, pParams, iteration, dims, ndims);
+    iteration++;
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
     {
         printf("time: %0.10f s\n", time_counter);
