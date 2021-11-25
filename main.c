@@ -16,7 +16,7 @@
 #include <string.h>
 #include <assert.h>
 
-#define DB_FILENAME "result.silo"
+#define DB_FILENAME "r/result%04d.silo"
 #define DB_MESHNAME "mesh"
 
 #define MU 1.25663706143591729538505735331180115367886775975E-6
@@ -33,6 +33,12 @@
 typedef unsigned int uint;
 typedef unsigned char uchar;
 
+typedef enum MODE
+{
+    VALIDATION_MODE = 0,
+    COMPUTATION_MODE = 1
+} MODE;
+
 /** Definition of the scene
  * Properties:
  *    width:            a in figure (y, in paper cs)
@@ -43,57 +49,73 @@ typedef unsigned char uchar;
  *    maxk:             Number of grid subdivisions (z dimension)
  *    spatial_step:     delta x = delta y = delta z
  *    time_step:        delta t
- *    simulation_time:  interval of time simulated (e.g. 1s)
- *    sampling_rate:    rate at which data is printed to file 
+ *    simulation_time:  interval of time simulated (in seconds)
+ *    sampling_rate:    rate at which data is printed to file (in #steps)
+ *    mode:             0 for validation mode, 1 for computation       
 **/
 typedef struct parameters
 {
     float width;
     float height;
     float length;
-    uint maxi;
-    uint maxj;
-    uint maxk;
+    size_t maxi;
+    size_t maxj;
+    size_t maxk;
     double spatial_step;
     double time_step;
     float simulation_time;
     uint sampling_rate;
+    MODE mode;
 
 } Parameters;
 
+/** Definition of the oven mesh (can be derived directly from Parameters)
+ * Properties:
+ *  dims:    Array of the sizes of each dimension (maxi, maxj, maxk)
+ *  coords:  Cordinates of each mesh point (grid)
+**/
+typedef struct oven
+{
+    int *dims;
+    double **coords;
+} Oven;
+
 /** A structure that rassembles all the fields components
  * Properties:
- *      E_x/y/z     The arrays of the x/y/z components of the electric field
- *      H_x/y/z     The arrays of the x/y/z componnents of the magnetic field
+ *      Ex/y/z     The arrays of the x/y/z components of the electric field
+ *      Hx/y/z     The arrays of the x/y/z componnents of the magnetic field
  **/
 typedef struct fields
 {
 
-    double *E_x;
-    double *E_y;
-    double *E_z;
-    double *H_x;
-    double *H_y;
-    double *H_z;
+    double *Ex;
+    double *Ey;
+    double *Ez;
+    double *Hx;
+    double *Hy;
+    double *Hz;
 
 } Fields;
 
-/** Exceptionnally clever way to garbage collect
- * Parameters:
+/** Exceptionnally clever way to garbage collect in C
+ * Properties:
  *      previous:   The previous allocated object
  *      ptr:        The current allocated object
  * Description:
  *      This structure allow us to store each allocated object
  *      into a chained list with a LiFo strategy so when we
- *      free up memory we take care of the inner most objects
+ *      free up all memory we take care of the inner most objects
  * Author:
- *      Anonym genius
+ *      Anonymous genius
 **/
 typedef struct chainedAllocated
 {
     struct chainedAllocated *previous;
     void *ptr;
 } ChainedAllocated;
+
+// Superglobal variable
+static ChainedAllocated *allocatedLs;
 
 /**
 ------------------------------------------------------
@@ -102,10 +124,7 @@ typedef struct chainedAllocated
 ------------------------------------------------------
 **/
 
-// Superglobal variable
-static ChainedAllocated *allocatedLs;
-
-/** Free any allocated object with the next Malloc function
+/** Free any allocated object with the Malloc function (see below)
  * Description:
  *  This function free's the memory allocated for all
  *  the objects allocated with the next Malloc function
@@ -123,7 +142,10 @@ void *freeAll()
     }
 }
 
-/** Free the memory and throws an error, then exits.**/
+/** Free the memory and throws an error, then exits with EXIT_FAILURE.
+ * Parameters:
+ *  msg:    The message to throw before exit
+**/
 void fail(const char *msg)
 {
     perror(msg);
@@ -131,7 +153,7 @@ void fail(const char *msg)
     exit(EXIT_FAILURE);
 }
 
-/** Critical allocation shortcut (malloc or Critical error with exit)
+/** Critical allocation (malloc or Critical error with exit)
  * Description:
  *  In addition to critically check if the malloc properly worked,
  *  this function stores the reference to the new allocated object
@@ -161,10 +183,29 @@ void *Malloc(size_t size)
     return ptr;
 }
 
+/** Nice free which takes care of our superglobal chained list
+ * Parameters
+ *  ptr:    The pointer to free
+**/
+void Free(void *ptr)
+{
+    ChainedAllocated *successor = allocatedLs;
+    ChainedAllocated *current = allocatedLs;
+    while (current->ptr != ptr)
+    {
+        successor = current;
+        current = current->previous;
+    }
+
+    free(current->ptr);
+    successor->previous = current->previous;
+    free(current);
+}
+
 /** Loads the parameters into the system memory
- * Arguments:
+ * Parameters:
  *    filename: The file containing the parameters properties (.txt)
- * Return value:
+ * Return:
  *    A pointer to the parameters structure loaded in system memory
 **/
 Parameters *load_parameters(const char *filename)
@@ -184,226 +225,239 @@ Parameters *load_parameters(const char *filename)
     fscanf(fParams, "%lf", &pParameters->time_step);
     fscanf(fParams, "%f", &pParameters->simulation_time);
     fscanf(fParams, "%u", &pParameters->sampling_rate);
+    fscanf(fParams, "%x", &pParameters->mode);
 
     fclose(fParams);
 
-    pParameters->maxi = (uint)(pParameters->length / pParameters->spatial_step + 1);
-    pParameters->maxj = (uint)(pParameters->width / pParameters->spatial_step + 1);
-    pParameters->maxk = (uint)(pParameters->height / pParameters->spatial_step + 1);
+    pParameters->maxi = (size_t)(pParameters->length / pParameters->spatial_step + 1);
+    pParameters->maxj = (size_t)(pParameters->width / pParameters->spatial_step + 1);
+    pParameters->maxk = (size_t)(pParameters->height / pParameters->spatial_step + 1);
 
     return pParameters;
 }
 
+/** Compute the oven properties and returns it
+ * Parameters:
+ *  params: The parameters of the simulation
+ * Returns:
+ *  A pointer to the oven structure
+**/
+Oven *compute_oven(Parameters *params)
+{
+    Oven *r = Malloc(sizeof(Oven));
+    r->dims = Malloc(sizeof(size_t) * 3);
+    r->coords = Malloc(sizeof(double **) * 3);
+    r->dims[0] = params->maxi;
+    r->dims[1] = params->maxj;
+    r->dims[2] = params->maxk;
+
+    double *x = Malloc(params->maxi * sizeof(double));
+    double *y = Malloc(params->maxj * sizeof(double));
+    double *z = Malloc(params->maxk * sizeof(double));
+
+    //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
+    double dx = params->spatial_step;
+    for (int i = 0; i < params->maxi; ++i)
+    {
+        x[i] = i * dx;
+    }
+
+    for (int i = 0; i < params->maxj; ++i)
+    {
+        y[i] = i * dx;
+    }
+
+    for (int i = 0; i < params->maxk; ++i)
+    {
+        z[i] = i * dx;
+    }
+
+    int dims[] = {params->maxi, params->maxj, params->maxk};
+    int ndims = 3;
+    double *cords[] = {x, y, z};
+
+    r->coords[0] = x;
+    r->coords[1] = y;
+    r->coords[2] = z;
+
+    return r;
+}
+
 /** Allocates and initialize to 0.0 all the components of each field at a given time t.
- * Comment:
- *  (Amaury) It might be possible to store in system memory only the data for a single time step.
- *  (Ionut) Pay attention that I/O operations can be bottleneck... ?
+ * Parameters:
+ *  params: The parameters of the simulation
 **/
 Fields *initialize_fields(Parameters *params)
 {
     Fields *pFields = Malloc(sizeof(Fields));
-    uint space_size = params->maxi * params->maxj * params->maxk;
+    size_t space_size = params->maxi * params->maxj * params->maxk;
 
-    pFields->E_x = Malloc(sizeof(double) * space_size);
-    pFields->E_y = Malloc(sizeof(double) * space_size);
-    pFields->E_z = Malloc(sizeof(double) * space_size);
-    pFields->H_x = Malloc(sizeof(double) * space_size);
-    pFields->H_y = Malloc(sizeof(double) * space_size);
-    pFields->H_z = Malloc(sizeof(double) * space_size);
+    pFields->Ex = Malloc(sizeof(double) * space_size);
+    pFields->Ey = Malloc(sizeof(double) * space_size);
+    pFields->Ez = Malloc(sizeof(double) * space_size);
+    pFields->Hx = Malloc(sizeof(double) * space_size);
+    pFields->Hy = Malloc(sizeof(double) * space_size);
+    pFields->Hz = Malloc(sizeof(double) * space_size);
 
-    for (uint i = 0; i < space_size; ++i)
+    while (0 < space_size)
     {
-        pFields->E_x[i] = 0.0;
-        pFields->E_y[i] = 0.0;
-        pFields->E_z[i] = 0.0;
-        pFields->H_x[i] = 0.0;
-        pFields->H_y[i] = 0.0;
-        pFields->H_z[i] = 0.0;
+        --space_size;
+        pFields->Ex[space_size] = 0.0;
+        pFields->Ey[space_size] = 0.0;
+        pFields->Ez[space_size] = 0.0;
+        pFields->Hx[space_size] = 0.0;
+        pFields->Hy[space_size] = 0.0;
+        pFields->Hz[space_size] = 0.0;
     }
 
     return pFields;
 }
 
-/** Returns the index of the i/j/k th element **/
+/** Fast shortcut to get the index of a field at i, j and k
+ * Parameters:
+ *  params:  The params of the simulation
+ *  i, j, k: The coordinates of the wanted field
+ * Returns:
+ *  The index in a 1D array
+**/
 size_t idx(Parameters *params, size_t i, size_t j, size_t k)
 {
     return i + j * params->maxi + k * params->maxi * params->maxj;
 }
 
-/** Sets the initial field as asked in Question 3.a. **/
-void set_initial_conditions(double *E_y, Parameters *p)
+/** Sets the initial field as asked in Question 3.a.
+ * Parameters:
+ *  Ey: The y component of the Energy fields
+ *  p:   The parameters of the simulation
+ * Remark: 
+ * (Ionut) - Should only be done for VALIDATION_MODE ?
+**/
+void set_initial_conditions(double *Ey, Parameters *p)
 {
-    for (size_t i = 0; i < p->maxi; ++i)
-    {
-        for (size_t j = 0; j < p->maxj; ++j)
-        {
-            for (size_t k = 0; k < p->maxk; ++k)
+    size_t i, j, k;
+    for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk; ++k)
             {
                 assert(i + j * p->maxi + k * p->maxi * p->maxj <= p->maxi * p->maxj * p->maxk);
-                E_y[idx(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length);
+                Ey[idx(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length);
             }
-        }
-    }
 }
 
-void update_H_x_field(Parameters *p, double *H_x, double *E_y, double *E_z)
+/** Updates the H field
+ * Parameters:
+ *  p:      The parameters of the simulation
+ *  fields: The fields
+**/
+void update_H_field(Parameters *p, Fields *fields)
 {
+    // Shortcuts to avoid pointers exploration in the loop.
+    double *Ex = fields->Ex;
+    double *Ey = fields->Ey;
+    double *Ez = fields->Ez;
+    double *Hx = fields->Hx;
+    double *Hy = fields->Hy;
+    double *Hz = fields->Hz;
+
+    double factor = p->time_step / (MU * p->spatial_step),
+           Ey_nexti = 0.0, Ez_nexti = 0.0,
+           Ex_nextj = 0.0, Ez_nextj = 0.0,
+           Ex_nextk = 0.0, Ey_nextk = 0.0;
+
     size_t i, j, k;
-    double factor = p->time_step / (MU * p->spatial_step);
+
     for (i = 0; i < p->maxi; i++)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                double E_y_nextk = 0.0;
-                double E_z_nextj = 0.0;
-
-                if (k + 1 < p->maxk)
-                    E_y_nextk = E_y[idx(p, i, j, k + 1)] - E_y[idx(p, i, j, k)];
-                if (j + 1 < p->maxj)
-                    E_z_nextj = E_z[idx(p, i, j + 1, k)]  - E_z[idx(p, i, j, k)];
-
-                H_x[idx(p, i, j, k)] = H_x[idx(p, i, j, k)] + factor * E_y_nextk - factor * E_z_nextj;
-            }
-}
-
-void update_H_y_field(Parameters *p, double *H_y, double *E_z, double *E_x)
-{
-    size_t i, j, k;
-    double factor = p->time_step / (MU * p->spatial_step);
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk; k++)
-            {
-                double E_x_nextk = 0.0;
-                double E_z_nexti = 0.0;
-
-                if (k + 1 < p->maxk)
-                    E_x_nextk = E_x[idx(p, i, j, k + 1)] - E_x[idx(p, i, j, k)];
-                if (i + 1 < p->maxi)
-                    E_z_nexti = E_z[idx(p, i + 1, j, k)] - E_z[idx(p, i, j, k)];
-
-                H_y[idx(p, i, j, k)] = H_y[idx(p, i, j, k)] + factor * E_z_nexti - factor * E_x_nextk;
-            }
-}
-
-void update_H_z_field(Parameters *p, double *H_z, double *E_x, double *E_y)
-{
-
-    size_t i, j, k;
-    double factor = p->time_step / (MU * p->spatial_step);
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk; k++)
-            {
-                double E_x_nextj = 0.0;
-                double E_y_nexti = 0.0;
+                Ey_nexti = 0.0;
+                Ez_nexti = 0.0;
+                Ex_nextj = 0.0;
+                Ez_nextj = 0.0;
+                Ey_nextk = 0.0;
+                Ex_nextk = 0.0;
 
                 if (i + 1 < p->maxi)
-                    E_y_nexti = E_y[idx(p, i + 1, j, k)] - E_y[idx(p, i, j, k)];
+                {
+                    Ez_nexti = Ez[idx(p, i + 1, j, k)] - Ez[idx(p, i, j, k)];
+                    Ey_nexti = Ey[idx(p, i + 1, j, k)] - Ey[idx(p, i, j, k)];
+                }
+                if (k + 1 < p->maxk)
+                {
+                    Ey_nextk = Ey[idx(p, i, j, k + 1)] - Ey[idx(p, i, j, k)];
+                    Ex_nextk = Ex[idx(p, i, j, k + 1)] - Ex[idx(p, i, j, k)];
+                }
                 if (j + 1 < p->maxj)
-                    E_x_nextj = E_x[idx(p, i, j + 1, k)] - E_x[idx(p, i, j, k)];
+                {
+                    Ez_nextj = Ez[idx(p, i, j + 1, k)] - Ez[idx(p, i, j, k)];
+                    Ex_nextj = Ex[idx(p, i, j + 1, k)] - Ex[idx(p, i, j, k)];
+                }
 
-                H_z[idx(p, i, j, k)] = H_z[idx(p, i, j, k)] + factor * E_x_nextj - factor * E_y_nexti;
+                Hx[idx(p, i, j, k)] = Hx[idx(p, i, j, k)] + factor * Ey_nextk - factor * Ez_nextj;
+                Hy[idx(p, i, j, k)] = Hy[idx(p, i, j, k)] + factor * Ez_nexti - factor * Ex_nextk;
+                Hz[idx(p, i, j, k)] = Hz[idx(p, i, j, k)] + factor * Ex_nextj - factor * Ey_nexti;
             }
 }
 
-void update_E_x_field(Parameters *p, double *E_x, double *H_z, double *H_y)
+/** Updates the E field
+ * Parameters:
+ *  p:      The parameters of the simulation
+ *  fields: The fields
+**/
+void update_E_field(Parameters *p, Fields *fields)
 {
+    // Shortcuts to avoid pointers exploration in the loop.
+    double *Ex = fields->Ex;
+    double *Ey = fields->Ey;
+    double *Ez = fields->Ez;
+    double *Hx = fields->Hx;
+    double *Hy = fields->Hy;
+    double *Hz = fields->Hz;
+
+    double factor = p->time_step / (EPSILON * p->spatial_step),
+           Hy_previ = 0.0, Hz_previ = 0.0,
+           Hx_prevj = 0.0, Hz_prevj = 0.0,
+           Hx_prevk = 0.0, Hy_prevk = 0.0;
+
     size_t i, j, k;
-    double factor = p->time_step / (EPSILON * p->spatial_step);
+
     for (i = 0; i < p->maxi; i++)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                double H_z_prevj = 0.0;
-                double H_y_prevk = 0.0;
-
-                if (0 < j)
-                    H_z_prevj = H_z[idx(p, i, j, k)] - H_z[idx(p, i, j - 1, k)];
-                if (0 < k)
-                    H_y_prevk = H_y[idx(p, i, j, k)] - H_y[idx(p, i, j, k - 1)];
-
-                E_x[idx(p, i, j, k)] = E_x[idx(p, i, j, k)] + factor *  H_z_prevj - factor * H_y_prevk;
-            }
-}
-
-void update_E_y_field(Parameters *p, double *E_y, double *H_x, double *H_z)
-{
-    size_t i, j, k;
-    double factor = p->time_step / (EPSILON * p->spatial_step);
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk; k++)
-            {
-                double H_x_prevk = 0.0;
-                double H_z_previ = 0.0;
+                Hy_previ = 0.0;
+                Hz_previ = 0.0;
+                Hx_prevj = 0.0;
+                Hz_prevj = 0.0;
+                Hx_prevk = 0.0;
+                Hy_prevk = 0.0;
 
                 if (0 < i)
-                    H_z_previ = H_z[idx(p, i, j, k)] - H_z[idx(p, i - 1, j, k)];
-                if (0 < k)
-                    H_x_prevk = H_x[idx(p, i, j, k)] -  H_x[idx(p, i, j, k - 1)];
-
-                E_y[idx(p, i, j, k)] = E_y[idx(p, i, j, k)] + factor * H_x_prevk - factor *  H_z_previ;
-            }
-}
-
-void update_E_z_field(Parameters *p, double *E_z, double *H_y, double *H_x)
-{
-
-    size_t i, j, k;
-    double factor = p->time_step / (EPSILON * p->spatial_step);
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk; k++)
-            {
-                double H_y_previ = 0.0;
-                double H_x_prevj = 0.0;
-
-                if (0 < i)
-                    H_y_previ = H_y[idx(p, i, j, k)] - H_y[idx(p, i - 1, j, k)];
+                {
+                    Hz_previ = Hz[idx(p, i, j, k)] - Hz[idx(p, i - 1, j, k)];
+                    Hy_previ = Hy[idx(p, i, j, k)] - Hy[idx(p, i - 1, j, k)];
+                }
                 if (0 < j)
-                    H_x_prevj = H_x[idx(p, i, j, k)] - H_x[idx(p, i, j - 1, k)];
+                {
+                    Hz_prevj = Hz[idx(p, i, j, k)] - Hz[idx(p, i, j - 1, k)];
+                    Hx_prevj = Hx[idx(p, i, j, k)] - Hx[idx(p, i, j - 1, k)];
+                }
+                if (0 < k)
+                {
+                    Hy_prevk = Hy[idx(p, i, j, k)] - Hy[idx(p, i, j, k - 1)];
+                    Hx_prevk = Hx[idx(p, i, j, k)] - Hx[idx(p, i, j, k - 1)];
+                }
 
-                E_z[idx(p, i, j, k)] = E_z[idx(p, i, j, k)] + factor * H_y_previ - factor * H_x_prevj;
+                Ex[idx(p, i, j, k)] = Ex[idx(p, i, j, k)] + factor * Hz_prevj - factor * Hy_prevk;
+                Ey[idx(p, i, j, k)] = Ey[idx(p, i, j, k)] + factor * Hx_prevk - factor * Hz_previ;
+                Ez[idx(p, i, j, k)] = Ez[idx(p, i, j, k)] + factor * Hy_previ - factor * Hx_prevj;
             }
 }
 
-/** Draw the oven mesh with all the girds **/
-void draw_oven(Parameters *p, DBfile *db)
+void write_silo(Fields *pFields, Parameters *pParams, Oven *pOven, int iteration)
 {
-    //TODO: Maybe create a Free to be able to free these once written?
-    double *x = Malloc(p->maxi * sizeof(double));
-    double *y = Malloc(p->maxj * sizeof(double));
-    double *z = Malloc(p->maxk * sizeof(double));
-
-    //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
-    double dx = p->spatial_step;
-    for (int i = 0; i < p->maxi; ++i)
-    {
-        x[i] = i * dx;
-    }
-
-    for (int i = 0; i < p->maxj; ++i)
-    {
-        y[i] = i * dx;
-    }
-
-    for (int i = 0; i < p->maxk; ++i)
-    {
-        z[i] = i * dx;
-    }
-
-    int dims[] = {p->maxi, p->maxj, p->maxk};
-    int ndims = 3;
-    double *cords[] = {x, y, z};
-    DBPutQuadmesh(db, DB_MESHNAME, NULL, cords, dims, ndims, DB_DOUBLE, DB_COLLINEAR, NULL);
-}
-
-void write_silo(Fields *pFields, Parameters *pParams, int iteration, int *dims, int ndims)
-{
-
     char filename[100];
-    sprintf(filename, "r/output%04d.silo", iteration);
+    sprintf(filename, DB_FILENAME, iteration);
 
     DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
     if (!dbfile)
@@ -411,30 +465,28 @@ void write_silo(Fields *pFields, Parameters *pParams, int iteration, int *dims, 
         fail("Could not create DB\n");
     }
 
-    draw_oven(pParams, dbfile);
-
-    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pFields->E_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pFields->E_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pFields->E_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->H_x, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->H_y, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->H_z, dims, ndims, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pOven->coords, pOven->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
+    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pFields->Ex, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pFields->Ey, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pFields->Ez, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->Hx, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->Hy, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->Hz, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
 
     DBClose(dbfile);
 }
 
-double calculate_electrical_energy(Fields *pFields, Parameters *params)
+double calculate_electrical_energy(Fields *pFields, Parameters *p)
 {
-
-    int i, j, k;
     double elec_energy = 0;
-    for (i = 1; i < params->maxi - 1; i++)
-        for (j = 1; j < params->maxj - 1; j++)
-            for (k = 1; k < params->maxk - 1; k++)
+    size_t i, j, k;
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                elec_energy += pow(pFields->E_x[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
-                               pow(pFields->E_y[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
-                               pow(pFields->E_z[i + j * params->maxi + k * params->maxi * params->maxj], 2);
+                elec_energy += pow(pFields->Ex[idx(p, i, j, k)], 2) +
+                               pow(pFields->Ey[idx(p, i, j, k)], 2) +
+                               pow(pFields->Ez[idx(p, i, j, k)], 2);
             }
 
     elec_energy *= EPSILON / 2.;
@@ -442,51 +494,44 @@ double calculate_electrical_energy(Fields *pFields, Parameters *params)
     return elec_energy;
 }
 
-double calculate_magnetic_energy(Fields *pFields, Parameters *params)
+double calculate_magnetic_energy(Fields *pFields, Parameters *p)
 {
-
-    int i, j, k;
     double mag_energy = 0;
-    for (i = 1; i < params->maxi - 1; i++)
-        for (j = 1; j < params->maxj - 1; j++)
-            for (k = 1; k < params->maxk - 1; k++)
+    size_t i, j, k;
+    for (i = 1; i < p->maxi - 1; i++)
+        for (j = 1; j < p->maxj - 1; j++)
+            for (k = 1; k < p->maxk - 1; k++)
             {
-                mag_energy += pow(pFields->H_x[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
-                              pow(pFields->H_y[i + j * params->maxi + k * params->maxi * params->maxj], 2) +
-                              pow(pFields->H_z[i + j * params->maxi + k * params->maxi * params->maxj], 2);
+                mag_energy += pow(pFields->Hx[idx(p, i, j, k)], 2) +
+                              pow(pFields->Hy[idx(p, i, j, k)], 2) +
+                              pow(pFields->Hz[idx(p, i, j, k)], 2);
             }
 
     mag_energy *= MU / 2.;
 
     return mag_energy;
 }
-void propagate_fields(Fields *pFields, Parameters *pParams)
+void propagate_fields(Fields *pFields, Parameters *pParams, Oven *pOven)
 {
-    int dims[] = {pParams->maxi, pParams->maxj, pParams->maxk};
-    int ndims = 3;
-
     double time_counter;
-    int iteration = 0;
+    int iteration = 1;
     double total_energy = calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams);
-    write_silo(pFields, pParams, iteration, dims, ndims);
-    iteration++;
+    write_silo(pFields, pParams, pOven, iteration);
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
     {
-        printf("time: %0.10f s\n", time_counter);
+        //printf("time: %0.10f s\n", time_counter);
         //below should be parallelized.
-        update_H_x_field(pParams, pFields->H_x, pFields->E_y, pFields->E_z); //H_x
-        update_H_y_field(pParams, pFields->H_y, pFields->E_z, pFields->E_x); //H_y
-        update_H_z_field(pParams, pFields->H_z, pFields->E_x, pFields->E_y); //H_z
-
-        update_E_x_field(pParams, pFields->E_x, pFields->H_z, pFields->H_y); //E_x
-        update_E_y_field(pParams, pFields->E_y, pFields->H_x, pFields->H_z); //E_y
-        update_E_z_field(pParams, pFields->E_z, pFields->H_y, pFields->H_x); //should check math // E_z
+        update_H_field(pParams, pFields);
+        update_E_field(pParams, pFields);
 
         //printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
         //printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
         //printf("Tot energy: %0.10f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
         assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
-        write_silo(pFields, pParams, iteration, dims, ndims);
+        if (iteration % pParams->sampling_rate == 0)
+        {
+            write_silo(pFields, pParams, pOven, iteration);
+        }
     }
 }
 
@@ -502,28 +547,17 @@ int main(int argc, const char *argv[])
 
     if (argc != 2)
     {
-        perror("This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
-        return EXIT_FAILURE;
+        fail("This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
     }
 
     printf("Loading the parameters...\n");
     Parameters *pParameters = load_parameters(argv[1]);
-
-    //BEGIN DEBUG
-    printf("width: %f \n", pParameters->width);
-    printf("height: %f \n", pParameters->height);
-    printf("length: %f \n", pParameters->length);
-    printf("spatial: %lf \n", pParameters->spatial_step);
-    printf("time: %lf \n", pParameters->time_step);
-    printf("total: %f \n", pParameters->simulation_time);
-    printf("rate: %u \n", pParameters->sampling_rate);
-    //END DEBUG
-
     if (pParameters->time_step > pParameters->simulation_time)
     {
-        perror("The time step must be lower than the simulation time!");
-        return EXIT_FAILURE;
+        fail("The time step must be lower than the simulation time!");
     }
+
+    Oven *pOven = compute_oven(pParameters);
 
     printf("Initializing fields\n");
     Fields *pFields = initialize_fields(pParameters);
@@ -531,9 +565,9 @@ int main(int argc, const char *argv[])
     printf("Creating mesh\n");
 
     printf("Setting initial conditions\n");
-    set_initial_conditions(pFields->E_y, pParameters);
+    set_initial_conditions(pFields->Ey, pParameters);
     printf("Launching simulation\n");
-    propagate_fields(pFields, pParameters);
+    propagate_fields(pFields, pParameters, pOven);
 
     printf("Freeing memory...\n");
     freeAll();
