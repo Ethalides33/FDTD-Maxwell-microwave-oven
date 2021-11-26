@@ -19,9 +19,9 @@
 #define DB_FILENAME "r/result%04d.silo"
 #define DB_MESHNAME "mesh"
 
-#define MU 1.2566370614E-6
+#define MU 1.25663706143591729538505735331180115367886775975E-6
 #define EPSILON 8.854E-12
-#define PI 3.14159265358979
+#define PI 3.14159265358979323846264338327950288419716939937510582097494
 
 /**
 ------------------------------------------------------
@@ -454,7 +454,7 @@ void update_E_field(Parameters *p, Fields *fields)
             }
 }
 
-void write_silo(Fields *pFields, Parameters *pParams, Oven *pOven, int iteration)
+void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven, int iteration)
 {
     char filename[100];
     sprintf(filename, DB_FILENAME, iteration);
@@ -472,6 +472,13 @@ void write_silo(Fields *pFields, Parameters *pParams, Oven *pOven, int iteration
     DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->Hx, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
     DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->Hy, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
     DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->Hz, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+
+    if (pParams->mode == VALIDATION_MODE)
+    {
+        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+    }
 
     DBClose(dbfile);
 }
@@ -512,68 +519,35 @@ double calculate_magnetic_energy(Fields *pFields, Parameters *p)
     return mag_energy;
 }
 
-void calculate_analytical(Parameters *p, Oven *pOven){
-    size_t space_size = p->maxi * p->maxj * p->maxk;
-
-    double* analytical_Ey = Malloc(sizeof(double) * space_size);
-    double* analytical_Hx = Malloc(sizeof(double) * space_size);
-    double* analytical_Hz = Malloc(sizeof(double) * space_size);
-
-    for (size_t s = 0; s<space_size; s++){
-        analytical_Ey[s] = 0.0;
-        analytical_Hx[s] = 0.0;
-        analytical_Hz[s] = 0.0;
-    }
-
-    double f_mnl = (3e+8/(2*PI))*sqrt(pow(PI/p->width, 2) + pow(PI/p->length, 2));
+void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double time_counter)
+{
+    double f_mnl = (3e+8 / (2 * PI)) * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2));
     double omega = 2 * PI * f_mnl;
-    double Z_te =  (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI/p->width, 2));
-    printf("frequency: %0.10f \n", f_mnl);
-    printf("z_te: %0.10f \n", Z_te);
+    double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
+    //printf("frequency: %0.10f \n", f_mnl);
+    //printf("z_te: %0.10f \n", Z_te);
 
     size_t i, j, k;
-    double time_counter;
-    int iteration = 1;
-
-    for (time_counter = 0; time_counter <= p->simulation_time; time_counter += p->time_step, iteration++)
-    {
-    char filename[100];
-    sprintf(filename, DB_FILENAME, iteration);
-
-    DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, NULL, DB_PDB);
-    if (!dbfile)
-    {
-        fail("Could not create DB\n");
-    }
-
-    DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pOven->coords, pOven->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
-    DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, analytical_Ey, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, analytical_Hx, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, analytical_Hz, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-
-    DBClose(dbfile);
-
     for (i = 0; i < p->maxi; i++)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                analytical_Ey[idx(p, i, j, k)] = cos(2*PI*f_mnl*time_counter) * sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length);
-                analytical_Hx[idx(p, i, j, k)] = (1/Z_te) * sin(2*PI*f_mnl*time_counter) * sin(PI * j * p->spatial_step / p->width) * cos(PI * i * p->spatial_step / p->length);
-                analytical_Hz[idx(p, i, j, k)] = -PI/(omega * MU * p->width) * sin(2*PI*f_mnl*time_counter) * cos(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length);
+                pValidationFields->Ey[idx(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length)) - pFields->Ey[idx(p, i, j, k)];
+                pValidationFields->Hx[idx(p, i, j, k)] = ((1 / Z_te) * sin(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * cos(PI * i * p->spatial_step / p->length)) - pFields->Hx[idx(p, i, j, k)];
+                pValidationFields->Hz[idx(p, i, j, k)] = (-PI / (omega * MU * p->width) * sin(2 * PI * f_mnl * time_counter) * cos(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length)) - pFields->Hz[idx(p, i, j, k)];
             }
-    }
-    free(analytical_Ey);
-    free(analytical_Hx);
-    free(analytical_Hz);
 }
 
-
-void propagate_fields(Fields *pFields, Parameters *pParams, Oven *pOven)
+void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
 {
     double time_counter;
     int iteration = 1;
     double total_energy = calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams);
-    write_silo(pFields, pParams, pOven, iteration);
+    if (pParams->mode == VALIDATION_MODE)
+    {
+        update_validation_fields_then_subfdtd(pParams, pFields, pValidationFields, 0.0);
+    }
+    write_silo(pFields, pValidationFields, pParams, pOven, iteration);
     for (time_counter = 0; time_counter <= pParams->simulation_time; time_counter += pParams->time_step, iteration++)
     {
         //printf("time: %0.10f s\n", time_counter);
@@ -581,13 +555,18 @@ void propagate_fields(Fields *pFields, Parameters *pParams, Oven *pOven)
         update_H_field(pParams, pFields);
         update_E_field(pParams, pFields);
 
+        if (pParams->mode == VALIDATION_MODE)
+        {
+            update_validation_fields_then_subfdtd(pParams, pFields, pValidationFields, time_counter);
+        }
+
         //printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
         //printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
-        printf("Tot energy: %0.15f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
+        //printf("Tot energy: %0.15f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
         assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
         if (iteration % pParams->sampling_rate == 0)
         {
-            write_silo(pFields, pParams, pOven, iteration);
+            write_silo(pFields, pValidationFields, pParams, pOven, iteration);
         }
     }
 }
@@ -618,14 +597,24 @@ int main(int argc, const char *argv[])
 
     printf("Initializing fields\n");
     Fields *pFields = initialize_fields(pParameters);
+    Fields *pValidationFields;
+
+    if (pParameters->mode == VALIDATION_MODE)
+    {
+        pValidationFields = initialize_fields(pParameters);
+        printf("Validation mode activated. \n");
+        // Free what's not needed for validation.
+        Free(pValidationFields->Ex);
+        Free(pValidationFields->Ez);
+        Free(pValidationFields->Hy);
+    }
 
     printf("Creating mesh\n");
 
     printf("Setting initial conditions\n");
     set_initial_conditions(pFields->Ey, pParameters);
     printf("Launching simulation\n");
-    //propagate_fields(pFields, pParameters, pOven);
-    calculate_analytical(pParameters, pOven);
+    propagate_fields(pFields, pValidationFields, pParameters, pOven);
     printf("Freeing memory...\n");
     freeAll();
 

@@ -1,8 +1,0 @@
-Welcome into our microwave oven eletrico-magnetic field simulator! 
-Loading the parameters...
-Initializing fields
-Creating mesh
-Setting initial conditions
-Launching simulation
-Freeing memory...
-Simulation complete!
