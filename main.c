@@ -432,17 +432,17 @@ void update_E_field(Parameters *p, Fields *fields)
                 Hx_prevk = 0.0;
                 Hy_prevk = 0.0;
 
-                if (0 < i)
+                if (i > 0)
                 {
                     Hz_previ = Hz[idx(p, i, j, k)] - Hz[idx(p, i - 1, j, k)];
                     Hy_previ = Hy[idx(p, i, j, k)] - Hy[idx(p, i - 1, j, k)];
                 }
-                if (0 < j)
+                if (j > 0)
                 {
                     Hz_prevj = Hz[idx(p, i, j, k)] - Hz[idx(p, i, j - 1, k)];
                     Hx_prevj = Hx[idx(p, i, j, k)] - Hx[idx(p, i, j - 1, k)];
                 }
-                if (0 < k)
+                if (k > 0)
                 {
                     Hy_prevk = Hy[idx(p, i, j, k)] - Hy[idx(p, i, j, k - 1)];
                     Hx_prevk = Hx[idx(p, i, j, k)] - Hx[idx(p, i, j, k - 1)];
