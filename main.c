@@ -22,6 +22,7 @@
 #define MU 1.25663706143591729538505735331180115367886775975E-6
 #define EPSILON 8.854E-12
 #define PI 3.14159265358979323846264338327950288419716939937510582097494
+#define CELERITY 299792458.0
 
 /**
 ------------------------------------------------------
@@ -370,27 +371,27 @@ void update_H_field(Parameters *p, Fields *fields)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                Ey_nexti = 0.0;
-                Ez_nexti = 0.0;
-                Ex_nextj = 0.0;
-                Ez_nextj = 0.0;
-                Ey_nextk = 0.0;
-                Ex_nextk = 0.0;
+                Ey_nexti = -Ey[idx(p, i, j, k)];
+                Ez_nexti = -Ez[idx(p, i, j, k)];
+                Ex_nextj = -Ex[idx(p, i, j, k)];
+                Ez_nextj = -Ez[idx(p, i, j, k)];
+                Ey_nextk = -Ey[idx(p, i, j, k)];
+                Ex_nextk = -Ex[idx(p, i, j, k)];
 
                 if (i + 1 < p->maxi)
                 {
-                    Ez_nexti = Ez[idx(p, i + 1, j, k)] - Ez[idx(p, i, j, k)];
-                    Ey_nexti = Ey[idx(p, i + 1, j, k)] - Ey[idx(p, i, j, k)];
+                    Ez_nexti += Ez[idx(p, i + 1, j, k)];
+                    Ey_nexti += Ey[idx(p, i + 1, j, k)];
                 }
                 if (k + 1 < p->maxk)
                 {
-                    Ey_nextk = Ey[idx(p, i, j, k + 1)] - Ey[idx(p, i, j, k)];
-                    Ex_nextk = Ex[idx(p, i, j, k + 1)] - Ex[idx(p, i, j, k)];
+                    Ey_nextk += Ey[idx(p, i, j, k + 1)];
+                    Ex_nextk += Ex[idx(p, i, j, k + 1)];
                 }
                 if (j + 1 < p->maxj)
                 {
-                    Ez_nextj = Ez[idx(p, i, j + 1, k)] - Ez[idx(p, i, j, k)];
-                    Ex_nextj = Ex[idx(p, i, j + 1, k)] - Ex[idx(p, i, j, k)];
+                    Ez_nextj += Ez[idx(p, i, j + 1, k)];
+                    Ex_nextj += Ex[idx(p, i, j + 1, k)];
                 }
 
                 Hx[idx(p, i, j, k)] = Hx[idx(p, i, j, k)] + factor * Ey_nextk - factor * Ez_nextj;
@@ -425,27 +426,27 @@ void update_E_field(Parameters *p, Fields *fields)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                Hy_previ = 0.0;
-                Hz_previ = 0.0;
-                Hx_prevj = 0.0;
-                Hz_prevj = 0.0;
-                Hx_prevk = 0.0;
-                Hy_prevk = 0.0;
+                Hy_previ = Hy[idx(p, i, j, k)];
+                Hz_previ = Hz[idx(p, i, j, k)];
+                Hx_prevj = Hx[idx(p, i, j, k)];
+                Hz_prevj = Hz[idx(p, i, j, k)];
+                Hx_prevk = Hx[idx(p, i, j, k)];
+                Hy_prevk = Hy[idx(p, i, j, k)];
 
-                if (i > 0)
+                if (0 < i)
                 {
-                    Hz_previ = Hz[idx(p, i, j, k)] - Hz[idx(p, i - 1, j, k)];
-                    Hy_previ = Hy[idx(p, i, j, k)] - Hy[idx(p, i - 1, j, k)];
+                    Hz_previ -= Hz[idx(p, i - 1, j, k)];
+                    Hy_previ -= Hy[idx(p, i - 1, j, k)];
                 }
-                if (j > 0)
+                if (0 < j)
                 {
-                    Hz_prevj = Hz[idx(p, i, j, k)] - Hz[idx(p, i, j - 1, k)];
-                    Hx_prevj = Hx[idx(p, i, j, k)] - Hx[idx(p, i, j - 1, k)];
+                    Hz_prevj -= Hz[idx(p, i, j - 1, k)];
+                    Hx_prevj -= Hx[idx(p, i, j - 1, k)];
                 }
-                if (k > 0)
+                if (0 < k)
                 {
-                    Hy_prevk = Hy[idx(p, i, j, k)] - Hy[idx(p, i, j, k - 1)];
-                    Hx_prevk = Hx[idx(p, i, j, k)] - Hx[idx(p, i, j, k - 1)];
+                    Hy_prevk -= Hy[idx(p, i, j, k - 1)];
+                    Hx_prevk -= Hx[idx(p, i, j, k - 1)];
                 }
 
                 Ex[idx(p, i, j, k)] = Ex[idx(p, i, j, k)] + factor * Hz_prevj - factor * Hy_prevk;
@@ -521,8 +522,8 @@ double calculate_magnetic_energy(Fields *pFields, Parameters *p)
 
 void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double time_counter)
 {
-    double f_mnl = (3e+8 / (2 * PI)) * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2));
-    double omega = 2 * PI * f_mnl;
+    double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2)) / PI;
+    double omega = 2.0 * PI * f_mnl;
     double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
     //printf("frequency: %0.10f \n", f_mnl);
     //printf("z_te: %0.10f \n", Z_te);
@@ -533,7 +534,7 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
             for (k = 0; k < p->maxk; k++)
             {
                 pValidationFields->Ey[idx(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length)) - pFields->Ey[idx(p, i, j, k)];
-                pValidationFields->Hx[idx(p, i, j, k)] = ((1 / Z_te) * sin(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * cos(PI * i * p->spatial_step / p->length)) - pFields->Hx[idx(p, i, j, k)];
+                pValidationFields->Hx[idx(p, i, j, k)] = ((1.0 / Z_te) * sin(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * cos(PI * i * p->spatial_step / p->length)) - pFields->Hx[idx(p, i, j, k)];
                 pValidationFields->Hz[idx(p, i, j, k)] = (-PI / (omega * MU * p->width) * sin(2 * PI * f_mnl * time_counter) * cos(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length)) - pFields->Hz[idx(p, i, j, k)];
             }
 }
