@@ -459,7 +459,7 @@ void write_silo(Fields *pFields, Parameters *pParams, Oven *pOven, int iteration
     char filename[100];
     sprintf(filename, DB_FILENAME, iteration);
 
-    DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, "My first SILO test", DB_PDB);
+    DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, NULL, DB_PDB);
     if (!dbfile)
     {
         fail("Could not create DB\n");
