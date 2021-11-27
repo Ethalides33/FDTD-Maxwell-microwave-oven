@@ -394,9 +394,9 @@ void update_H_field(Parameters *p, Fields *fields)
                     Ex_nextj += Ex[idx(p, i, j + 1, k)];
                 }
 
-                Hx[idx(p, i, j, k)] = Hx[idx(p, i, j, k)] + factor * Ey_nextk - factor * Ez_nextj;
-                Hy[idx(p, i, j, k)] = Hy[idx(p, i, j, k)] + factor * Ez_nexti - factor * Ex_nextk;
-                Hz[idx(p, i, j, k)] = Hz[idx(p, i, j, k)] + factor * Ex_nextj - factor * Ey_nexti;
+                Hx[idx(p, i, j, k)] += factor * Ey_nextk - factor * Ez_nextj;
+                Hy[idx(p, i, j, k)] += factor * Ez_nexti - factor * Ex_nextk;
+                Hz[idx(p, i, j, k)] += factor * Ex_nextj - factor * Ey_nexti;
             }
 }
 
@@ -449,9 +449,9 @@ void update_E_field(Parameters *p, Fields *fields)
                     Hx_prevk -= Hx[idx(p, i, j, k - 1)];
                 }
 
-                Ex[idx(p, i, j, k)] = Ex[idx(p, i, j, k)] + factor * Hz_prevj - factor * Hy_prevk;
-                Ey[idx(p, i, j, k)] = Ey[idx(p, i, j, k)] + factor * Hx_prevk - factor * Hz_previ;
-                Ez[idx(p, i, j, k)] = Ez[idx(p, i, j, k)] + factor * Hy_previ - factor * Hx_prevj;
+                Ex[idx(p, i, j, k)] += factor * Hz_prevj - factor * Hy_prevk;
+                Ey[idx(p, i, j, k)] += factor * Hx_prevk - factor * Hz_previ;
+                Ez[idx(p, i, j, k)] += factor * Hy_previ - factor * Hx_prevj;
             }
 }
 
