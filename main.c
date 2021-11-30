@@ -571,13 +571,13 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     aggregate_H_field(pParams, pFields->Hx, pOven->tmpV, 1, 0, 0);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->Hx, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     aggregate_H_field(pParams, pFields->Hy, pOven->tmpV, 0, 1, 0);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->Hy, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     aggregate_H_field(pParams, pFields->Hz, pOven->tmpV, 0, 0, 1);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->Hz, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     if (pParams->mode == VALIDATION_MODE)
     {
