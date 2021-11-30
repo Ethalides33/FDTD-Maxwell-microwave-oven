@@ -442,21 +442,21 @@ void update_H_field(Parameters *p, Fields *fields)
 
     size_t i, j, k;
 
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj - 1; j++)
-            for (k = 0; k < p->maxk - 1; k++)
+    for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->maxj - 1; ++j)
+            for (k = 0; k < p->maxk - 1; ++k)
                 Hx[kHx(p, i, j, k)] += factor * ((Ey[kEy(p, i, j, k + 1)] - Ey[kEy(p, i, j, k)]) -
                                                  (Ez[kEz(p, i, j + 1, k)] - Ez[kEz(p, i, j, k)]));
 
-    for (i = 0; i < p->maxi - 1; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk - 1; k++)
+    for (i = 0; i < p->maxi - 1; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk - 1; ++k)
                 Hy[kHy(p, i, j, k)] += factor * ((Ez[kEz(p, i + 1, j, k)] - Ez[kEz(p, i, j, k)]) -
                                                  (Ex[kEx(p, i, j, k + 1)] - Ex[kEx(p, i, j, k)]));
 
-    for (i = 0; i < p->maxi - 1; i++)
-        for (j = 0; j < p->maxj - 1; j++)
-            for (k = 0; k < p->maxk; k++)
+    for (i = 0; i < p->maxi - 1; ++i)
+        for (j = 0; j < p->maxj - 1; ++j)
+            for (k = 0; k < p->maxk; ++k)
                 Hz[kHz(p, i, j, k)] += factor * ((Ex[kEx(p, i, j + 1, k)] - Ex[kEx(p, i, j, k)]) -
                                                  (Ey[kEy(p, i + 1, j, k)] - Ey[kEy(p, i, j, k)]));
 }
@@ -480,20 +480,20 @@ void update_E_field(Parameters *p, Fields *fields)
 
     size_t i, j, k;
 
-    for (i = 0; i < p->maxi; i++)
-        for (j = 1; j < p->maxj; j++)
-            for (k = 1; k < p->maxk; k++)
+    for (i = 0; i < p->maxi; ++i)
+        for (j = 1; j < p->maxj; ++j)
+            for (k = 1; k < p->maxk; ++k)
                 Ex[kEx(p, i, j, k)] += factor * ((Hz[kHz(p, i, j, k)] - Hz[kHz(p, i, j - 1, k)]) -
                                                  (Hy[kHy(p, i, j, k)] - Hy[kHy(p, i, j, k - 1)]));
-    for (i = 1; i < p->maxi; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 1; k < p->maxk; k++)
+    for (i = 1; i < p->maxi; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 1; k < p->maxk; ++k)
                 Ey[kEy(p, i, j, k)] += factor * ((Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j, k - 1)]) -
                                                  (Hz[kHz(p, i, j, k)] - Hz[kHz(p, i - 1, j, k)]));
 
-    for (i = 1; i < p->maxi; i++)
-        for (j = 1; j < p->maxj; j++)
-            for (k = 0; k < p->maxk; k++)
+    for (i = 1; i < p->maxi; ++i)
+        for (j = 1; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk; ++k)
                 Ez[kEz(p, i, j, k)] += factor * ((Hy[kHy(p, i, j, k)] - Hy[kHy(p, i - 1, j, k)]) -
                                                  (Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j - 1, k)]));
 }
