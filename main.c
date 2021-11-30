@@ -648,15 +648,15 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
     double *vHz = pValidationFields->Hz;
 
     size_t i, j, k;
-    for (i = 0; i < p->maxi + 1; ++i)
+    for (i = 1; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk + 1; ++k)
+            for (k = 1; k < p->maxk + 1; ++k)
                 vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
                                         sin(PI * j * p->spatial_step / p->width) *
                                         sin(PI * i * p->spatial_step / p->length)) -
                                        pFields->Ey[kEy(p, i, j, k)];
 
-    for (i = 0; i < p->maxi + 1; ++i)
+    for (i = 1; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk; ++k)
                 vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
@@ -667,7 +667,7 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk + 1; ++k)
+            for (k = 1; k < p->maxk + 1; ++k)
                 vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->width) *
                                         sin(2 * PI * f_mnl * time_counter) *
                                         cos(PI * j * p->spatial_step / p->width) *
