@@ -72,13 +72,17 @@ typedef struct parameters
 
 /** Definition of the oven mesh (can be derived directly from Parameters)
  * Properties:
- *  dims:    Array of the sizes of each dimension (maxi, maxj, maxk)
+ *  dims:    Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
+ *  vdims:   Array of the sizez of each dimension for variables (maxi, maxj, mak)
  *  coords:  Cordinates of each mesh point (grid)
+ *  tmpV:    A temporary vector of size maxi*maxj*maxk for averaging the fields before exporting to silo.
 **/
 typedef struct oven
 {
     int *dims;
+    int *vdims;
     double **coords;
+    double *tmpV;
 } Oven;
 
 /** A structure that rassembles all the fields components
@@ -246,34 +250,33 @@ Parameters *load_parameters(const char *filename)
 Oven *compute_oven(Parameters *params)
 {
     Oven *r = Malloc(sizeof(Oven));
-    r->dims = Malloc(sizeof(size_t) * 3);
-    r->coords = Malloc(sizeof(double **) * 3);
-    r->dims[0] = params->maxi;
-    r->dims[1] = params->maxj;
-    r->dims[2] = params->maxk;
 
-    double *x = Malloc(params->maxi * sizeof(double));
-    double *y = Malloc(params->maxj * sizeof(double));
-    double *z = Malloc(params->maxk * sizeof(double));
+    r->dims = Malloc(sizeof(size_t) * 3);
+    r->vdims = Malloc(sizeof(size_t) * 3);
+    r->coords = Malloc(sizeof(double **) * 3);
+    r->dims[0] = params->maxi + 1;
+    r->dims[1] = params->maxj + 1;
+    r->dims[2] = params->maxk + 1;
+    r->vdims[0] = params->maxi;
+    r->vdims[1] = params->maxj;
+    r->vdims[2] = params->maxk;
+    r->tmpV = Malloc(sizeof(double) * params->maxi * params->maxj * params->maxk);
+
+    double *x = Malloc((params->maxi + 1) * sizeof(double));
+    double *y = Malloc((params->maxj + 1) * sizeof(double));
+    double *z = Malloc((params->maxk + 1) * sizeof(double));
 
     //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
     double dx = params->spatial_step;
-    for (int i = 0; i < params->maxi; ++i)
-    {
+    for (int i = 0; i < params->maxi + 1; ++i)
         x[i] = i * dx;
-    }
 
-    for (int i = 0; i < params->maxj; ++i)
-    {
+    for (int i = 0; i < params->maxj + 1; ++i)
         y[i] = i * dx;
-    }
 
-    for (int i = 0; i < params->maxk; ++i)
-    {
+    for (int i = 0; i < params->maxk + 1; ++i)
         z[i] = i * dx;
-    }
 
-    int dims[] = {params->maxi, params->maxj, params->maxk};
     int ndims = 3;
     double *cords[] = {x, y, z};
 
@@ -417,7 +420,8 @@ void set_initial_conditions(double *Ey, Parameters *p)
         for (j = 0; j < p->maxj; ++j)
             for (k = 1; k < p->maxk; ++k)
             {
-                Ey[kEy(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length);
+                Ey[kEy(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) *
+                                      sin(PI * i * p->spatial_step / p->length);
             }
 }
 
@@ -440,21 +444,21 @@ void update_H_field(Parameters *p, Fields *fields)
 
     size_t i, j, k;
 
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj-1; j++)
-            for (k = 0; k < p->maxk-1; k++)
+    for (i = 1; i < p->maxi; i++)
+        for (j = 0; j < p->maxj; j++)
+            for (k = 0; k < p->maxk; k++)
                 Hx[kHx(p, i, j, k)] += factor * ((Ey[kEy(p, i, j, k + 1)] - Ey[kEy(p, i, j, k)]) -
                                                  (Ez[kEz(p, i, j + 1, k)] - Ez[kEz(p, i, j, k)]));
 
-    for (i = 0; i < p->maxi-1; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk-1; k++)
+    for (i = 0; i < p->maxi; i++)
+        for (j = 1; j < p->maxj; j++)
+            for (k = 0; k < p->maxk; k++)
                 Hy[kHy(p, i, j, k)] += factor * ((Ez[kEz(p, i + 1, j, k)] - Ez[kEz(p, i, j, k)]) -
                                                  (Ex[kEx(p, i, j, k + 1)] - Ex[kEx(p, i, j, k)]));
 
-    for (i = 0; i < p->maxi-1; i++)
-        for (j = 0; j < p->maxj-1; j++)
-            for (k = 0; k < p->maxk; k++)
+    for (i = 0; i < p->maxi; i++)
+        for (j = 0; j < p->maxj; j++)
+            for (k = 1; k < p->maxk; k++)
                 Hz[kHz(p, i, j, k)] += factor * ((Ex[kEx(p, i, j + 1, k)] - Ex[kEx(p, i, j, k)]) -
                                                  (Ey[kEy(p, i + 1, j, k)] - Ey[kEy(p, i, j, k)]));
 }
@@ -496,6 +500,54 @@ void update_E_field(Parameters *p, Fields *fields)
                                                  (Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j - 1, k)]));
 }
 
+/** Computes the mean of an electrical field 
+ * Parameters:
+ *  p: The simulation parameters
+ *  Ef: The E field component in one direction
+ *  r:  The result aggregated vector of size (maxi, maxj, maxk)
+ *  ofi: The offset in X (related to the space size)
+ *  ofj: The offset in Y (related to the space size)
+ *  ofk: The offset in Z (related to the space size)
+**/
+void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t ofj, size_t ofk)
+{
+    size_t t = 0;
+    for (size_t i; i < p->maxi; ++i)
+        for (size_t j; j < p->maxj; ++j)
+            for (size_t k; k < p->maxk; ++k)
+                r[t++] = .25 * (Ef[idx(p, i, j, k, ofi, ofj)] +
+                                Ef[idx(p, i + ofi, j + ofj, k + ofk, ofi, ofj)] +
+                                Ef[idx(p, i, j + ofj, k + ofk, ofi, ofj)] +
+                                Ef[idx(p, i + ofi, j, k + ofk, ofi, ofj)]);
+}
+
+/** Computes the mean of an magnetic field 
+ * Parameters:
+ *  p: The simulation parameters
+ *  Hf: The H field component in one direction
+ *  r:  The result aggregated vector of size (maxi, maxj, maxk)
+ *  ofi: The offset in X (related to the space size)
+ *  ofj: The offset in Y (related to the space size)
+ *  ofk: The offset in Z (related to the space size)
+**/
+void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t ofj, size_t ofk)
+{
+    size_t t = 0;
+    for (size_t i; i < p->maxi; ++i)
+        for (size_t j; j < p->maxj; ++j)
+            for (size_t k; k < p->maxk; ++k)
+                r[t++] = .5 * (Hf[idx(p, i, j, k, ofi, ofj)] +
+                               Hf[idx(p, i + ofi, j + ofj, k + ofk, ofi, ofj)]);
+}
+
+/** Writes a silo file of the simulation in the given timestamp
+ * Parameters:
+ *  pFields: The fields
+ *  pValidationFields: The validation fields
+ *  pParams: The parameters of the simulation
+ *  pOven: The oven computed
+ *  iteration: The iteration count
+**/
 void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven, int iteration)
 {
     char filename[100];
@@ -508,18 +560,36 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     }
 
     DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pOven->coords, pOven->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
-    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pFields->Ex, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pFields->Ey, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pFields->Ez, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->Hx, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->Hy, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->Hz, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+
+    aggregate_E_field(pParams, pFields->Ex, pOven->tmpV, 0, 1, 1);
+    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+
+    aggregate_E_field(pParams, pFields->Ey, pOven->tmpV, 1, 0, 1);
+    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+
+    aggregate_E_field(pParams, pFields->Ez, pOven->tmpV, 1, 1, 0);
+    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+
+    aggregate_H_field(pParams, pFields->Hx, pOven->tmpV, 1, 0, 0);
+    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pFields->Hx, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+
+    aggregate_H_field(pParams, pFields->Hy, pOven->tmpV, 0, 1, 0);
+    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pFields->Hy, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+
+    aggregate_H_field(pParams, pFields->Hz, pOven->tmpV, 0, 0, 1);
+    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pFields->Hz, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     if (pParams->mode == VALIDATION_MODE)
     {
-        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
-        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pOven->dims, 3, NULL, 0, DB_DOUBLE, DB_NODECENT, NULL);
+        aggregate_E_field(pParams, pValidationFields->Ey, pOven->tmpV, 1, 0, 1);
+        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        //DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        aggregate_H_field(pParams, pFields->Hx, pOven->tmpV, 1, 0, 0);
+        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        //DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        aggregate_H_field(pParams, pFields->Hz, pOven->tmpV, 0, 0, 1);
+        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        //DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
     }
 
     DBClose(dbfile);
