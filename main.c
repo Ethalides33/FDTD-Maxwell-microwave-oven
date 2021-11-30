@@ -291,23 +291,69 @@ Oven *compute_oven(Parameters *params)
 Fields *initialize_fields(Parameters *params)
 {
     Fields *pFields = Malloc(sizeof(Fields));
-    size_t space_size = params->maxi * params->maxj * params->maxk;
+
+    // Ex
+    size_t space_size = params->maxi * (params->maxj + 1) * (params->maxk + 1);
 
     pFields->Ex = Malloc(sizeof(double) * space_size);
-    pFields->Ey = Malloc(sizeof(double) * space_size);
-    pFields->Ez = Malloc(sizeof(double) * space_size);
-    pFields->Hx = Malloc(sizeof(double) * space_size);
-    pFields->Hy = Malloc(sizeof(double) * space_size);
-    pFields->Hz = Malloc(sizeof(double) * space_size);
 
     while (0 < space_size)
     {
         --space_size;
         pFields->Ex[space_size] = 0.0;
+    }
+
+    // Ey
+    space_size = (params->maxi + 1) * params->maxj * (params->maxk + 1);
+
+    pFields->Ey = Malloc(sizeof(double) * space_size);
+
+    while (0 < space_size)
+    {
+        --space_size;
         pFields->Ey[space_size] = 0.0;
+    }
+
+    // Ez
+    space_size = (params->maxi + 1) * (params->maxj + 1) * params->maxk;
+
+    pFields->Ez = Malloc(sizeof(double) * space_size);
+
+    while (0 < space_size)
+    {
+        --space_size;
         pFields->Ez[space_size] = 0.0;
+    }
+
+    // Hx
+    space_size = (params->maxi + 1) * params->maxj * params->maxk;
+
+    pFields->Hx = Malloc(sizeof(double) * space_size);
+
+    while (0 < space_size)
+    {
+        --space_size;
         pFields->Hx[space_size] = 0.0;
+    }
+
+    // Hy
+    space_size = params->maxi * (params->maxj + 1) * params->maxk;
+
+    pFields->Hy = Malloc(sizeof(double) * space_size);
+
+    while (0 < space_size)
+    {
+        --space_size;
         pFields->Hy[space_size] = 0.0;
+    }
+
+    // Hz
+    space_size = params->maxi * params->maxj * (params->maxk + 1);
+    pFields->Hz = Malloc(sizeof(double) * space_size);
+
+    while (0 < space_size)
+    {
+        --space_size;
         pFields->Hz[space_size] = 0.0;
     }
 
