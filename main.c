@@ -416,13 +416,11 @@ size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 void set_initial_conditions(double *Ey, Parameters *p)
 {
     size_t i, j, k;
-    for (i = 1; i < p->maxi; ++i)
+    for (i = 1; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->maxk; ++k)
-            {
+            for (k = 1; k < p->maxk + 1; ++k)
                 Ey[kEy(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) *
                                       sin(PI * i * p->spatial_step / p->length);
-            }
 }
 
 /** Updates the H field
@@ -645,15 +643,36 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
     //printf("frequency: %0.10f \n", f_mnl);
     //printf("z_te: %0.10f \n", Z_te);
 
+    double *vEy = pValidationFields->Ey;
+    double *vHx = pValidationFields->Hx;
+    double *vHz = pValidationFields->Hz;
+
     size_t i, j, k;
-    for (i = 0; i < p->maxi; i++)
-        for (j = 0; j < p->maxj; j++)
-            for (k = 0; k < p->maxk; k++)
-            {
-                pValidationFields->Ey[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length)) - pFields->Ey[kEy(p, i, j, k)];
-                pValidationFields->Hx[kHx(p, i, j, k)] = ((1.0 / Z_te) * sin(2 * PI * f_mnl * time_counter) * sin(PI * j * p->spatial_step / p->width) * cos(PI * i * p->spatial_step / p->length)) - pFields->Hx[kHx(p, i, j, k)];
-                pValidationFields->Hz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->width) * sin(2 * PI * f_mnl * time_counter) * cos(PI * j * p->spatial_step / p->width) * sin(PI * i * p->spatial_step / p->length)) - pFields->Hz[kHz(p, i, j, k)];
-            }
+    for (i = 0; i < p->maxi + 1; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk + 1; ++k)
+                vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
+                                        sin(PI * j * p->spatial_step / p->width) *
+                                        sin(PI * i * p->spatial_step / p->length)) -
+                                       pFields->Ey[kEy(p, i, j, k)];
+
+    for (i = 0; i < p->maxi + 1; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk; ++k)
+                vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
+                                        sin(2 * PI * f_mnl * time_counter) *
+                                        sin(PI * j * p->spatial_step / p->width) *
+                                        cos(PI * i * p->spatial_step / p->length)) -
+                                       pFields->Hx[kHx(p, i, j, k)];
+
+    for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk + 1; ++k)
+                vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->width) *
+                                        sin(2 * PI * f_mnl * time_counter) *
+                                        cos(PI * j * p->spatial_step / p->width) *
+                                        sin(PI * i * p->spatial_step / p->length)) -
+                                       pFields->Hz[kHz(p, i, j, k)];
 }
 
 void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
