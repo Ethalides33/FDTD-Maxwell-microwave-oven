@@ -419,7 +419,7 @@ void set_initial_conditions(double *Ey, Parameters *p)
     for (i = 0; i < p->maxi+1; ++i)
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk+1; ++k)
-                Ey[kEy(p, i, j, k)] = sin(PI * j * p->spatial_step / p->width) *
+                Ey[kEy(p, i, j, k)] = sin(PI * k * p->spatial_step / p->width) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
 
