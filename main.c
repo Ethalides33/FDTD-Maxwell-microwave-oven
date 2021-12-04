@@ -600,40 +600,72 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     DBClose(dbfile);
 }
 
-double calculate_electrical_energy(Fields *pFields, Parameters *p)
+double calculate_E_energy(Fields *pFields, Parameters *p)
 {
-    double elec_energy = 0; //mauvaises bornes ?
+    double* Ex = pFields->Ex;
+    double* Ey = pFields->Ey;
+    double* Ez = pFields->Ez;
+
+    double ex_energy = 0;
+    double ey_energy = 0;
+    double ez_energy = 0;
+
+    double mean_ex, mean_ey, mean_ez;    
+    double dv= pow(p->spatial_step, 3); // volume element
+
     size_t i, j, k;
-    for (i = 1; i < p->maxi - 1; i++)
-        for (j = 1; j < p->maxj - 1; j++)
-            for (k = 1; k < p->maxk - 1; k++)
+
+    for (i = 0; i < p->maxi; i++)
+        for (j = 0; j < p->maxj; j++)
+            for (k = 0; k < p->maxk; k++)
             {
-                elec_energy += pow(pFields->Ex[kEx(p, i, j, k)], 2) +
-                               pow(pFields->Ey[kEy(p, i, j, k)], 2) +
-                               pow(pFields->Ez[kEz(p, i, j, k)], 2);
+                mean_ex = (Ex[kEx(p, i, j, k)] +  Ex[kEx(p, i, j, k+1)] + Ex[kEx(p, i, j+1, k)] + Ex[kEx(p, i, j+1, k+1)])/4. ;
+                ex_energy += pow(mean_ex, 2) * dv;
+
+                mean_ey = (Ey[kEy(p, i, j, k)] + Ey[kEy(p, i+1, j, k)] + Ey[kEy(p, i, j, k+1)] + Ey[kEy(p, i+1, j, k+1)])/4. ;
+                ey_energy += pow(mean_ey, 2) * dv;
+
+                mean_ez = (Ez[kHz(p, i, j, k)] + Ez[kHz(p, i, j+1, k)] + Ez[kHz(p, i+1, j, k)] + Ez[kHz(p, i+1, j+1, k)])/4. ;
+                ez_energy += pow(mean_ez, 2) * dv;
             }
 
-    elec_energy *= EPSILON / 2.;
+    double E_energy = (ex_energy + ey_energy + ez_energy)*EPSILON/2.;
 
-    return elec_energy;
+    return E_energy;
 }
 
-double calculate_magnetic_energy(Fields *pFields, Parameters *p)
+double calculate_H_energy(Fields *pFields, Parameters *p)
 {
-    double mag_energy = 0;
+    double* Hx = pFields->Hx;
+    double* Hy = pFields->Hy;
+    double* Hz = pFields->Hz;
+
+    double hx_energy = 0;
+    double hy_energy = 0;
+    double hz_energy = 0;
+
+    double mean_hx, mean_hy, mean_hz;    
+    double dv= pow(p->spatial_step, 3); // volume element
+
     size_t i, j, k;
-    for (i = 1; i < p->maxi - 1; i++) // mauvaises bornes ?
-        for (j = 1; j < p->maxj - 1; j++)
-            for (k = 1; k < p->maxk - 1; k++)
+
+    for (i = 0; i < p->maxi; i++)
+        for (j = 0; j < p->maxj; j++)
+            for (k = 0; k < p->maxk; k++)
             {
-                mag_energy += pow(pFields->Hx[kHx(p, i, j, k)], 2) +
-                              pow(pFields->Hy[kHy(p, i, j, k)], 2) +
-                              pow(pFields->Hz[kHz(p, i, j, k)], 2);
+                mean_hx = (Hx[kHx(p, i, j, k)] + Hx[kHx(p, i+1, j, k)])/2. ;
+                hx_energy += pow(mean_hx, 2) * dv;
+
+                mean_hy = (Hy[kHy(p, i, j, k)] + Hy[kHy(p, i, j+1, k)])/2. ;
+                hy_energy += pow(mean_hy, 2) * dv;
+
+                mean_hz = (Hx[kHx(p, i, j, k)] + Hx[kHx(p, i, j, k+1)])/2. ;
+                hz_energy += pow(mean_hz, 2) * dv;
             }
 
-    mag_energy *= MU / 2.;
+    double H_energy = (hx_energy + hy_energy + hz_energy)*MU/2.;
 
-    return mag_energy;
+    return H_energy;
 }
 
 void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double time_counter)
@@ -752,7 +784,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 {
     double time_counter;
     int iteration = 1;
-    double total_energy = calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams);
+    double total_energy = calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams);
     if (pParams->mode == VALIDATION_MODE)
     {
         update_validation_fields_then_subfdtd(pParams, pFields, pValidationFields, 0.0);
@@ -780,10 +812,11 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
             update_validation_fields_then_subfdtd(pParams, pFields, pValidationFields, time_counter);
         }
 
-        //printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
-        //printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
-        //printf("Tot energy: %0.15f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
-        //assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
+        printf("Electrical energy: %0.10f \n", calculate_E_energy(pFields, pParams));
+        printf("Magnetic energy: %0.10f \n", calculate_H_energy(pFields, pParams));
+        printf("Tot energy: %0.20f \n", calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams));
+        printf("Theoretical energy: %0.20f \n", (EPSILON*pParams->length*pParams->width*pParams->height)/8.);
+        //assert((calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams) - total_energy) <= 0.000001);
         if (iteration % pParams->sampling_rate == 0)
         {
             write_silo(pFields, pValidationFields, pParams, pOven, iteration);
@@ -832,7 +865,7 @@ int main(int argc, const char *argv[])
     printf("Creating mesh\n");
 
     printf("Setting initial conditions\n");
-    //set_initial_conditions(pFields->Ey, pParameters); only if microwzve mode is not on
+    set_initial_conditions(pFields->Ey, pParameters); //only if microwzve mode is not on
     printf("Launching simulation\n");
     propagate_fields(pFields, pValidationFields, pParameters, pOven);
     printf("Freeing memory...\n");
