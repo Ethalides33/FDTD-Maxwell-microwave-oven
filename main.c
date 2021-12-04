@@ -37,7 +37,8 @@ typedef unsigned char uchar;
 typedef enum MODE
 {
     VALIDATION_MODE = 0,
-    COMPUTATION_MODE = 1
+    COMPUTATION_MODE = 1,
+    MICROWAVE_MODE = 2
 } MODE;
 
 /** Definition of the scene
@@ -675,6 +676,79 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
                                        pFields->Hz[kHz(p, i, j, k)];
 }
 
+void set_source(Parameters *p, Fields *pFields, double time_counter){
+
+    double* Ey = pFields->Ey;
+    double* Ez = pFields->Ez;
+    double* Hy = pFields->Hy;
+    double* Hz = pFields->Hz;
+
+    double aprime = 0.005;
+    double bprime = 0.005;
+
+    double min_z = p->length/2. - aprime/2. ;
+    double max_z = min_z + aprime;
+
+    double min_y = p->height/2. - bprime/2. ; 
+    double max_y = min_y + bprime;
+
+    double min_k = (int) (min_z / p->spatial_step)-1;
+    double max_k = (int) (max_z / p->spatial_step) +1;
+
+    double min_j = (int) (min_y / p->spatial_step)-1;
+    double max_j = (int) (max_y / p->spatial_step) +1;
+
+/*
+ *    width:            a in figure (y, in paper cs)
+ *    height:           b in figure (z, in paper cs)
+ *    length:           d in figure (x, in paper cs)*/
+
+    double f = 2.45e10;
+
+    double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2)) / PI;
+    double omega = 2.0 * PI * f_mnl;
+    double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
+
+
+    size_t i, j, k;
+
+
+    //printf("mink, maxk, minj, maxj: %f, %f, %f, %f", min_k, max_k, min_j, max_j);
+    for (j = min_j; j < max_j; ++j)
+        for (k = min_k; k < max_k; ++k)
+            {
+                Ey[kEy(p, 0, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
+                Ez[kEz(p, 0, j, k)] = 0;
+                Hy[kHy(p, 0, j, k)] = 0;
+                Hz[kHz(p, 0, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime);
+
+
+            }
+
+    /*for (i = 1; i < p->maxi + 1; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 1; k < p->maxk + 1; ++k)
+                    Ey[kEy(p, i, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime);
+
+    for (i = 1; i < p->maxi; ++i)
+        for (j = 1; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk; ++k)
+                if (i == 0 && k * p->spatial_step  < aprime && j * p->spatial_step < bprime)
+                    Ez[kEz(p, i, j, k)] = 0;
+
+    for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->maxj+1; ++j)
+            for (k = 0; k < p->maxk; ++k)
+                if (i == 0 && k * p->spatial_step  < aprime && j * p->spatial_step < bprime)
+                    Hy[kHy(p, i, j, k)] = 0;
+
+    for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->maxj; ++j)
+            for (k = 0; k < p->maxk+1; ++k)
+                if (i == 0 && k * p->spatial_step  < aprime && j * p->spatial_step < bprime)
+                    Hz[kHz(p, i, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime);*/
+}
+
 void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
 {
     double time_counter;
@@ -689,7 +763,17 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
     {
         //printf("time: %0.10f s\n", time_counter);
         //below should be parallelized.
+        
+        if (pParams->mode == MICROWAVE_MODE)
+        {
+            set_source(pParams, pFields, time_counter);
+
+        }
         update_H_field(pParams, pFields);
+        if (pParams->mode == MICROWAVE_MODE)
+        {
+            set_source(pParams, pFields, time_counter);
+        }
         update_E_field(pParams, pFields);
 
         if (pParams->mode == VALIDATION_MODE)
@@ -700,7 +784,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         //printf("Electrical energy: %0.10f \n", calculate_electrical_energy(pFields, pParams));
         //printf("Magnetic energy: %0.10f \n", calculate_magnetic_energy(pFields, pParams));
         //printf("Tot energy: %0.15f \n", calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams));
-        assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
+        //assert((calculate_electrical_energy(pFields, pParams) + calculate_magnetic_energy(pFields, pParams) - total_energy) <= 0.000001);
         if (iteration % pParams->sampling_rate == 0)
         {
             write_silo(pFields, pValidationFields, pParams, pOven, iteration);
@@ -749,7 +833,7 @@ int main(int argc, const char *argv[])
     printf("Creating mesh\n");
 
     printf("Setting initial conditions\n");
-    set_initial_conditions(pFields->Ey, pParameters);
+    //set_initial_conditions(pFields->Ey, pParameters); only if microwzve mode is not on
     printf("Launching simulation\n");
     propagate_fields(pFields, pValidationFields, pParameters, pOven);
     printf("Freeing memory...\n");
