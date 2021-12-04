@@ -711,17 +711,16 @@ void set_source(Parameters *p, Fields *pFields, double time_counter){
 
 
     size_t i, j, k;
-
+    size_t shift_j, shift_k;
 
     //printf("mink, maxk, minj, maxj: %f, %f, %f, %f", min_k, max_k, min_j, max_j);
-    for (j = min_j; j < max_j; ++j)
-        for (k = min_k; k < max_k; ++k)
+    for (j = min_j, shift_j=0; j < max_j; ++j, ++shift_j)
+        for (k = min_k, shift_k = 0; k < max_k; ++k, ++shift_k)
             {
-                Ey[kEy(p, 0, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
+                Ey[kEy(p, 0, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
                 Ez[kEz(p, 0, j, k)] = 0;
                 Hy[kHy(p, 0, j, k)] = 0;
-                Hz[kHz(p, 0, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime);
-
+                Hz[kHz(p, 0, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime);
 
             }
 
