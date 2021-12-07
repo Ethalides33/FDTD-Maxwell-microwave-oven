@@ -37,8 +37,7 @@ typedef unsigned char uchar;
 typedef enum MODE
 {
     VALIDATION_MODE = 0,
-    COMPUTATION_MODE = 1,
-    MICROWAVE_MODE = 2
+    COMPUTATION_MODE = 1
 } MODE;
 
 /** Definition of the scene
@@ -417,9 +416,9 @@ size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 void set_initial_conditions(double *Ey, Parameters *p)
 {
     size_t i, j, k;
-    for (i = 0; i < p->maxi+1; ++i)
+    for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk+1; ++k)
+            for (k = 0; k < p->maxk + 1; ++k)
                 Ey[kEy(p, i, j, k)] = sin(PI * k * p->spatial_step / p->width) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
@@ -443,21 +442,21 @@ void update_H_field(Parameters *p, Fields *fields)
 
     size_t i, j, k;
 
-    for (i = 0; i < p->maxi+1; ++i)
+    for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk; ++k)
                 Hx[kHx(p, i, j, k)] += factor * ((Ey[kEy(p, i, j, k + 1)] - Ey[kEy(p, i, j, k)]) -
                                                  (Ez[kEz(p, i, j + 1, k)] - Ez[kEz(p, i, j, k)]));
 
     for (i = 0; i < p->maxi; ++i)
-        for (j = 0; j < p->maxj+1; ++j)
+        for (j = 0; j < p->maxj + 1; ++j)
             for (k = 0; k < p->maxk; ++k)
                 Hy[kHy(p, i, j, k)] += factor * ((Ez[kEz(p, i + 1, j, k)] - Ez[kEz(p, i, j, k)]) -
                                                  (Ex[kEx(p, i, j, k + 1)] - Ex[kEx(p, i, j, k)]));
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk+1; ++k)
+            for (k = 0; k < p->maxk + 1; ++k)
                 Hz[kHz(p, i, j, k)] += factor * ((Ex[kEx(p, i, j + 1, k)] - Ex[kEx(p, i, j, k)]) -
                                                  (Ey[kEy(p, i + 1, j, k)] - Ey[kEy(p, i, j, k)]));
 }
@@ -582,13 +581,10 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     {
         aggregate_E_field(pParams, pValidationFields->Ey, pOven->tmpV, 1, 0, 1);
         DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        //DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
         aggregate_H_field(pParams, pFields->Hx, pOven->tmpV, 1, 0, 0);
         DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        //DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
         aggregate_H_field(pParams, pFields->Hz, pOven->tmpV, 0, 0, 1);
         DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        //DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
     }
 
     const char *names[] = {"E", "H"};
@@ -600,18 +596,20 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     DBClose(dbfile);
 }
 
+/** Computes the total electrical energy in the system
+ * **/
 double calculate_E_energy(Fields *pFields, Parameters *p)
 {
-    double* Ex = pFields->Ex;
-    double* Ey = pFields->Ey;
-    double* Ez = pFields->Ez;
+    double *Ex = pFields->Ex;
+    double *Ey = pFields->Ey;
+    double *Ez = pFields->Ez;
 
-    double ex_energy = 0;
-    double ey_energy = 0;
-    double ez_energy = 0;
+    double ex_energy = 0.0;
+    double ey_energy = 0.0;
+    double ez_energy = 0.0;
 
-    double mean_ex, mean_ey, mean_ez;    
-    double dv= pow(p->spatial_step, 3); // volume element
+    double mean_ex, mean_ey, mean_ez;
+    double dv = pow(p->spatial_step, 3); // volume element
 
     size_t i, j, k;
 
@@ -619,33 +617,33 @@ double calculate_E_energy(Fields *pFields, Parameters *p)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                mean_ex = (Ex[kEx(p, i, j, k)] +  Ex[kEx(p, i, j, k+1)] + Ex[kEx(p, i, j+1, k)] + Ex[kEx(p, i, j+1, k+1)])/4. ;
+                mean_ex = (Ex[kEx(p, i, j, k)] + Ex[kEx(p, i, j, k + 1)] + Ex[kEx(p, i, j + 1, k)] + Ex[kEx(p, i, j + 1, k + 1)]) / 4.;
                 ex_energy += pow(mean_ex, 2) * dv;
 
-                mean_ey = (Ey[kEy(p, i, j, k)] + Ey[kEy(p, i+1, j, k)] + Ey[kEy(p, i, j, k+1)] + Ey[kEy(p, i+1, j, k+1)])/4. ;
+                mean_ey = (Ey[kEy(p, i, j, k)] + Ey[kEy(p, i + 1, j, k)] + Ey[kEy(p, i, j, k + 1)] + Ey[kEy(p, i + 1, j, k + 1)]) / 4.;
                 ey_energy += pow(mean_ey, 2) * dv;
 
-                mean_ez = (Ez[kHz(p, i, j, k)] + Ez[kHz(p, i, j+1, k)] + Ez[kHz(p, i+1, j, k)] + Ez[kHz(p, i+1, j+1, k)])/4. ;
+                mean_ez = (Ez[kHz(p, i, j, k)] + Ez[kHz(p, i, j + 1, k)] + Ez[kHz(p, i + 1, j, k)] + Ez[kHz(p, i + 1, j + 1, k)]) / 4.;
                 ez_energy += pow(mean_ez, 2) * dv;
             }
 
-    double E_energy = (ex_energy + ey_energy + ez_energy)*EPSILON/2.;
+    double E_energy = (ex_energy + ey_energy + ez_energy) * EPSILON / 2.;
 
     return E_energy;
 }
 
 double calculate_H_energy(Fields *pFields, Parameters *p)
 {
-    double* Hx = pFields->Hx;
-    double* Hy = pFields->Hy;
-    double* Hz = pFields->Hz;
+    double *Hx = pFields->Hx;
+    double *Hy = pFields->Hy;
+    double *Hz = pFields->Hz;
 
-    double hx_energy = 0;
-    double hy_energy = 0;
-    double hz_energy = 0;
+    double hx_energy = 0.0;
+    double hy_energy = 0.0;
+    double hz_energy = 0.0;
 
-    double mean_hx, mean_hy, mean_hz;    
-    double dv= pow(p->spatial_step, 3); // volume element
+    double mean_hx, mean_hy, mean_hz;
+    double dv = pow(p->spatial_step, 3); // volume element
 
     size_t i, j, k;
 
@@ -653,17 +651,17 @@ double calculate_H_energy(Fields *pFields, Parameters *p)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                mean_hx = (Hx[kHx(p, i, j, k)] + Hx[kHx(p, i+1, j, k)])/2. ;
+                mean_hx = (Hx[kHx(p, i, j, k)] + Hx[kHx(p, i + 1, j, k)]) / 2.;
                 hx_energy += pow(mean_hx, 2) * dv;
 
-                mean_hy = (Hy[kHy(p, i, j, k)] + Hy[kHy(p, i, j+1, k)])/2. ;
+                mean_hy = (Hy[kHy(p, i, j, k)] + Hy[kHy(p, i, j + 1, k)]) / 2.;
                 hy_energy += pow(mean_hy, 2) * dv;
 
-                mean_hz = (Hx[kHx(p, i, j, k)] + Hx[kHx(p, i, j, k+1)])/2. ;
+                mean_hz = (Hz[kHz(p, i, j, k)] + Hz[kHz(p, i, j, k + 1)]) / 2.;
                 hz_energy += pow(mean_hz, 2) * dv;
             }
 
-    double H_energy = (hx_energy + hy_energy + hz_energy)*MU/2.;
+    double H_energy = (hx_energy + hy_energy + hz_energy) * MU / 2.;
 
     return H_energy;
 }
@@ -708,32 +706,28 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
                                        pFields->Hz[kHz(p, i, j, k)];
 }
 
-void set_source(Parameters *p, Fields *pFields, double time_counter){
+void set_source(Parameters *p, Fields *pFields, double time_counter)
+{
 
-    double* Ey = pFields->Ey;
-    double* Ez = pFields->Ez;
-    double* Hy = pFields->Hy;
-    double* Hz = pFields->Hz;
+    double *Ey = pFields->Ey;
+    double *Ez = pFields->Ez;
+    double *Hy = pFields->Hy;
+    double *Hz = pFields->Hz;
 
     double aprime = 0.005;
     double bprime = 0.005;
 
-    double min_z = p->length/2. - aprime/2. ;
+    double min_z = p->length / 2. - aprime / 2.;
     double max_z = min_z + aprime;
 
-    double min_y = p->height/2. - bprime/2. ; 
+    double min_y = p->height / 2. - bprime / 2.;
     double max_y = min_y + bprime;
 
-    double min_k = (int) (min_z / p->spatial_step)-1;
-    double max_k = (int) (max_z / p->spatial_step) +1;
+    double min_k = (int)(min_z / p->spatial_step) - 1;
+    double max_k = (int)(max_z / p->spatial_step) + 1;
 
-    double min_j = (int) (min_y / p->spatial_step)-1;
-    double max_j = (int) (max_y / p->spatial_step) +1;
-
-/*
- *    width:            a in figure (y, in paper cs)
- *    height:           b in figure (z, in paper cs)
- *    length:           d in figure (x, in paper cs)*/
+    double min_j = (int)(min_y / p->spatial_step) - 1;
+    double max_j = (int)(max_y / p->spatial_step) + 1;
 
     double f = 2.45e10;
 
@@ -741,43 +735,17 @@ void set_source(Parameters *p, Fields *pFields, double time_counter){
     double omega = 2.0 * PI * f_mnl;
     double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
 
-
     size_t i, j, k;
     size_t shift_j, shift_k;
 
-    //printf("mink, maxk, minj, maxj: %f, %f, %f, %f", min_k, max_k, min_j, max_j);
-    for (j = min_j, shift_j=0; j < max_j; ++j, ++shift_j)
+    for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         for (k = min_k, shift_k = 0; k < max_k; ++k, ++shift_k)
-            {
-                Ey[kEy(p, 0, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
-                Ez[kEz(p, 0, j, k)] = 0;
-                Hy[kHy(p, 0, j, k)] = 0;
-                Hz[kHz(p, 0, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime);
-
-            }
-
-    /*for (i = 1; i < p->maxi + 1; ++i)
-        for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->maxk + 1; ++k)
-                    Ey[kEy(p, i, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime);
-
-    for (i = 1; i < p->maxi; ++i)
-        for (j = 1; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk; ++k)
-                if (i == 0 && k * p->spatial_step  < aprime && j * p->spatial_step < bprime)
-                    Ez[kEz(p, i, j, k)] = 0;
-
-    for (i = 0; i < p->maxi; ++i)
-        for (j = 0; j < p->maxj+1; ++j)
-            for (k = 0; k < p->maxk; ++k)
-                if (i == 0 && k * p->spatial_step  < aprime && j * p->spatial_step < bprime)
-                    Hy[kHy(p, i, j, k)] = 0;
-
-    for (i = 0; i < p->maxi; ++i)
-        for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk+1; ++k)
-                if (i == 0 && k * p->spatial_step  < aprime && j * p->spatial_step < bprime)
-                    Hz[kHz(p, i, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (k * p->spatial_step - aprime) / aprime);*/
+        {
+            Ey[kEy(p, 0, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
+            Ez[kEz(p, 0, j, k)] = 0;
+            Hy[kHy(p, 0, j, k)] = 0;
+            Hz[kHz(p, 0, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime);
+        }
 }
 
 void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
@@ -794,14 +762,13 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
     {
         //printf("time: %0.10f s\n", time_counter);
         //below should be parallelized.
-        
-        if (pParams->mode == MICROWAVE_MODE)
+
+        if (pParams->mode == COMPUTATION_MODE)
         {
             set_source(pParams, pFields, time_counter);
-
         }
         update_H_field(pParams, pFields);
-        if (pParams->mode == MICROWAVE_MODE)
+        if (pParams->mode == COMPUTATION_MODE)
         {
             set_source(pParams, pFields, time_counter);
         }
@@ -812,11 +779,14 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
             update_validation_fields_then_subfdtd(pParams, pFields, pValidationFields, time_counter);
         }
 
-        printf("Electrical energy: %0.10f \n", calculate_E_energy(pFields, pParams));
-        printf("Magnetic energy: %0.10f \n", calculate_H_energy(pFields, pParams));
-        printf("Tot energy: %0.20f \n", calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams));
-        printf("Theoretical energy: %0.20f \n", (EPSILON*pParams->length*pParams->width*pParams->height)/8.);
-        //assert((calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams) - total_energy) <= 0.000001);
+        if (pParams->mode == VALIDATION_MODE)
+        {
+            printf("Electrical energy: %0.20f \n", calculate_E_energy(pFields, pParams));
+            printf("Magnetic energy: %0.20f \n", calculate_H_energy(pFields, pParams));
+            printf("Tot energy: %0.20f \n", calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams));
+            printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+            //assert((calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams) - total_energy) <= 0.000001);
+        }
         if (iteration % pParams->sampling_rate == 0)
         {
             write_silo(pFields, pValidationFields, pParams, pOven, iteration);
@@ -865,7 +835,10 @@ int main(int argc, const char *argv[])
     printf("Creating mesh\n");
 
     printf("Setting initial conditions\n");
-    set_initial_conditions(pFields->Ey, pParameters); //only if microwzve mode is not on
+
+    if (pParameters->mode == VALIDATION_MODE)
+        set_initial_conditions(pFields->Ey, pParameters);
+
     printf("Launching simulation\n");
     propagate_fields(pFields, pValidationFields, pParameters, pOven);
     printf("Freeing memory...\n");
