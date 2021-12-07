@@ -709,25 +709,25 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
 void set_source(Parameters *p, Fields *pFields, double time_counter)
 {
 
-    double *Ey = pFields->Ey;
+    double *Ex = pFields->Ex;
     double *Ez = pFields->Ez;
-    double *Hy = pFields->Hy;
+    double *Hx = pFields->Hx;
     double *Hz = pFields->Hz;
 
     double aprime = 0.005;
     double bprime = 0.005;
 
-    double min_z = p->length / 2. - aprime / 2.;
-    double max_z = min_z + aprime;
+    double min_y = p->width / 2. - aprime / 2.;
+    double max_y = min_y + aprime;
 
-    double min_y = p->height / 2. - bprime / 2.;
-    double max_y = min_y + bprime;
-
-    double min_k = (int)(min_z / p->spatial_step) - 1;
-    double max_k = (int)(max_z / p->spatial_step) + 1;
+    double min_x = p->length / 2. - bprime / 2.;
+    double max_x = min_x + bprime;
 
     double min_j = (int)(min_y / p->spatial_step) - 1;
     double max_j = (int)(max_y / p->spatial_step) + 1;
+
+    double min_i = (int)(min_x / p->spatial_step) - 1;
+    double max_i = (int)(max_x / p->spatial_step) + 1;
 
     double f = 2.45e10;
 
@@ -736,15 +736,16 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
 
     size_t i, j, k;
-    size_t shift_j, shift_k;
+    size_t shift_i, shift_j;
 
-    for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
-        for (k = min_k, shift_k = 0; k < max_k; ++k, ++shift_k)
+    //printf("%f, %f, %f, %f, \n", min_i, max_i, min_j, max_j);
+    for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
+        for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         {
-            Ey[kEy(p, 0, j, k)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
-            Ez[kEz(p, 0, j, k)] = 0;
-            Hy[kHy(p, 0, j, k)] = 0;
-            Hz[kHz(p, 0, j, k)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_k * p->spatial_step - aprime) / aprime);
+            Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
+            Ex[kEx(p, i, j, 0)] = 0;
+            Hz[kHz(p, i, j, 0)] = 0;
+            Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step - aprime) / aprime);
         }
 }
 
@@ -781,10 +782,10 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 
         if (pParams->mode == VALIDATION_MODE)
         {
-            printf("Electrical energy: %0.20f \n", calculate_E_energy(pFields, pParams));
-            printf("Magnetic energy: %0.20f \n", calculate_H_energy(pFields, pParams));
-            printf("Tot energy: %0.20f \n", calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams));
-            printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+            //printf("Electrical energy: %0.20f \n", calculate_E_energy(pFields, pParams));
+            //printf("Magnetic energy: %0.20f \n", calculate_H_energy(pFields, pParams));
+            //printf("Tot energy: %0.20f \n", calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams));
+            //printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
             //assert((calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams) - total_energy) <= 0.000001);
         }
         if (iteration % pParams->sampling_rate == 0)
