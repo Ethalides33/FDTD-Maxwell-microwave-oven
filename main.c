@@ -848,10 +848,6 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
 **/
 void set_source(Parameters *p, Fields *pFields, double time_counter)
 {
-<<<<<<< HEAD
-
-=======
->>>>>>> c0926daddc068c7f2a39ec6fbfaf52eec90acf0b
     double *Ex = pFields->Ex;
     double *Ez = pFields->Ez;
     double *Hx = pFields->Hx;
@@ -878,28 +874,17 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     double omega = 2.0 * PI * f_mnl;
     double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
 
-<<<<<<< HEAD
-    size_t i, j, k;
-=======
     size_t i, j;
->>>>>>> c0926daddc068c7f2a39ec6fbfaf52eec90acf0b
     size_t shift_i, shift_j;
 
     //printf("%f, %f, %f, %f, \n", min_i, max_i, min_j, max_j);
     for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
         for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         {
-<<<<<<< HEAD
             Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
             Ex[kEx(p, i, j, 0)] = 0;
             Hz[kHz(p, i, j, 0)] = 0;
             Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
-=======
-            Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
-            Ex[kEx(p, i, j, 0)] = 0;
-            Hz[kHz(p, i, j, 0)] = 0;
-            Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step - aprime) / aprime);
->>>>>>> c0926daddc068c7f2a39ec6fbfaf52eec90acf0b
         }
 }
 
@@ -1067,17 +1052,6 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 
         if (pParams->mode == VALIDATION_MODE)
         {
-<<<<<<< HEAD
-            //printf("Electrical energy: %0.20f \n", calculate_E_energy(pFields, pParams));
-            //printf("Magnetic energy: %0.20f \n", calculate_H_energy(pFields, pParams));
-            //printf("Tot energy: %0.20f \n", calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams));
-            //printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
-            //assert((calculate_E_energy(pFields, pParams) + calculate_H_energy(pFields, pParams) - total_energy) <= 0.000001);
-        }
-        if (iteration % pParams->sampling_rate == 0)
-        {
-            write_silo(pFields, pValidationFields, pParams, pOven, iteration);
-=======
             update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, timer);
 
             printf("Electrical energy: %0.20f \n", calculate_E_energy(joined_fields, pParams));
@@ -1085,7 +1059,6 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
             printf("Tot energy: %0.20f \n", calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams));
             printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
             //assert((calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams) - total_energy) <= 0.000001);
->>>>>>> c0926daddc068c7f2a39ec6fbfaf52eec90acf0b
         }
     }
 }
