@@ -53,6 +53,12 @@ $ module load releases/2020b Silo/4.11-foss-2020b
 [More information on Silo](https://wci.llnl.gov/sites/wci/files/2020-08/GettingDataIntoVisIt2.0.0.pdf).
 
 
+This branch is parallel, you must install OpenMPI and OpenMP:
+
+```bash
+$ sudo apt-get install openmpi-bin openmpi-common openssh-client openssh-server libopenmpi1.10 libopenmpi-dev libomp-dev
+```
+
 ## Compilation
 Simply run 
 ```bash
@@ -69,6 +75,7 @@ $ make h5
 
 
 ## Usage
+Check the tutorial [here](https://mpitutorial.com/tutorials/mpi-hello-world/) for the parallel instructions
 ```bash
 $ ./microwave ./params.txt
 ```
