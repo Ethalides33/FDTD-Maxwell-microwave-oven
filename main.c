@@ -742,10 +742,10 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
         for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         {
-            Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step - aprime) / aprime); // i = 0 pour face x =0
+            Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
             Ex[kEx(p, i, j, 0)] = 0;
             Hz[kHz(p, i, j, 0)] = 0;
-            Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step - aprime) / aprime);
+            Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
         }
 }
 
