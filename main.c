@@ -8,7 +8,7 @@
  * Description:
  *    This program simulates the propagation of an electromagnetic
       wave in a microwave oven using the FDTD scheme.
-**/
+*/
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
@@ -30,18 +30,18 @@
 ------------------------------------------------------
 ------------------- Data Structures & Type definitions
 ------------------------------------------------------
-**/
-
-// Shortcuts:
-typedef unsigned int uint;
-typedef unsigned char uchar;
-
+*/
+/** Execution modes for this program.
+ * VALIDATION_MODE: There is no source but an initial condition given by the equantion in the statement
+ * COMOPUTATION_MODE: The source is set and continuously radiates the simulation box
+*/
 typedef enum MODE
 {
     VALIDATION_MODE = 0,
     COMPUTATION_MODE = 1
 } MODE;
 
+/** TAGS used for diverse OpenMPI communications */
 typedef enum TAGS
 {
     EX_TAG_TO_UP = 0,
@@ -77,8 +77,14 @@ typedef enum TAGS
  *    time_step:        delta t
  *    simulation_time:  interval of time simulated (in seconds)
  *    sampling_rate:    rate at which data is printed to file (in #steps)
- *    mode:             0 for validation mode, 1 for computation       
-**/
+ *    mode:             0 for validation mode, 1 for computation
+ * 
+ *    rank:             The rank of the current CPU (MPI)
+ *    ranks:            The number of ranks, aka. world_size (MPI)
+ *    k_layers:         The number of layers on the (X,Y) plane treaten by current CPU
+ *    lower_cpu:        The rank of the CPU working on the plane below (Z-1)
+ *    upper_cpu:        The rank of the CPU working on the plane above (Z+1)
+*/
 typedef struct parameters
 {
     float width;
@@ -90,27 +96,25 @@ typedef struct parameters
     double spatial_step;
     double time_step;
     float simulation_time;
-    uint sampling_rate;
+    unsigned int sampling_rate;
     MODE mode;
 
     // Parallelization
     int rank;
-    int max_rank;
-    size_t startk;
-    size_t endk;
+    int ranks;
     size_t k_layers;
     int lower_cpu;
     int upper_cpu;
 
 } Parameters;
 
-/** Definition of the oven mesh (can be derived directly from Parameters)
+/** Definition of the oven mesh (can be derived directly from Parameters), it's useless to recompute it at each timestep
  * Properties:
  *  dims:    Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
  *  vdims:   Array of the sizez of each dimension for variables (maxi, maxj, mak)
  *  coords:  Cordinates of each mesh point (grid)
- *  tmpV:    A temporary vector of size maxi*maxj*maxk for averaging the fields before exporting to silo.
-**/
+ *  tmpV:    A temporary vector of size maxi*maxj*maxk for averaging the fields before writting silo file.
+*/
 typedef struct oven
 {
     int *dims;
@@ -123,7 +127,7 @@ typedef struct oven
  * Properties:
  *      Ex/y/z     The arrays of the x/y/z components of the electric field
  *      Hx/y/z     The arrays of the x/y/z componnents of the magnetic field
- **/
+ */
 typedef struct fields
 {
 
@@ -136,7 +140,7 @@ typedef struct fields
 
 } Fields;
 
-/** Exceptionnally clever way to garbage collect in C
+/** An approach to manage memory allocations in a chained list
  * Properties:
  *      previous:   The previous allocated object
  *      ptr:        The current allocated object
@@ -144,9 +148,7 @@ typedef struct fields
  *      This structure allow us to store each allocated object
  *      into a chained list with a LiFo strategy so when we
  *      free up all memory we take care of the inner most objects
- * Author:
- *      Anonymous genius
-**/
+*/
 typedef struct chainedAllocated
 {
     struct chainedAllocated *previous;
@@ -161,7 +163,7 @@ static ChainedAllocated *allocatedLs;
 ---------------------------- Function's Specifications
 ------------------------- Signatures & Implementations
 ------------------------------------------------------
-**/
+*/
 
 /** Free any allocated object with the Malloc function (see below)
  * Description:
@@ -169,7 +171,7 @@ static ChainedAllocated *allocatedLs;
  *  the objects allocated with the next Malloc function
  *  in the reverse way of their allocation (LiFo) in order
  *  to deal with nested structures.
-**/
+*/
 void *freeAll()
 {
     while (allocatedLs)
@@ -184,7 +186,7 @@ void *freeAll()
 /** Free the memory and throws an error, then exits with EXIT_FAILURE.
  * Parameters:
  *  msg:    The message to throw before exit
-**/
+*/
 void fail(const char *msg)
 {
     perror(msg);
@@ -192,19 +194,17 @@ void fail(const char *msg)
     exit(EXIT_FAILURE);
 }
 
-/** Critical allocation (malloc or Critical error with exit)
+/** Critical allocation (malloc or fail)
  * Description:
  *  In addition to critically check if the malloc properly worked,
  *  this function stores the reference to the new allocated object
  *  in the superglobal chained list which is then used to free the
  *  memory before exit.
-**/
+*/
 void *Malloc(size_t size)
 {
     if (allocatedLs == NULL)
-    {
         allocatedLs = malloc(sizeof(ChainedAllocated));
-    }
     else
     {
         ChainedAllocated *successor = malloc(sizeof(ChainedAllocated));
@@ -216,16 +216,14 @@ void *Malloc(size_t size)
     allocatedLs->ptr = ptr;
 
     if (!ptr)
-    {
         fail("CRITICAL ERROR: Could not allocate enough memory!");
-    }
     return ptr;
 }
 
-/** Nice free which takes care of our superglobal chained list
- * Parameters
+/** For an object allocated with the Malloc function above, frees the memory and removes the entry from the chained list.
+ * Parameters:
  *  ptr:    The pointer to free
-**/
+*/
 void Free(void *ptr)
 {
     ChainedAllocated *successor = allocatedLs;
@@ -246,16 +244,14 @@ void Free(void *ptr)
  *    filename: The file containing the parameters properties (.txt)
  * Return:
  *    A pointer to the parameters structure loaded in system memory
-**/
+*/
 Parameters *load_parameters(const char *filename)
 {
     FILE *fParams = fopen(filename, "r");
     Parameters *pParameters = Malloc(sizeof(Parameters));
 
     if (!fParams)
-    {
         fail("Unable to open parameters file!");
-    }
 
     fscanf(fParams, "%f", &pParameters->length);
     fscanf(fParams, "%f", &pParameters->width);
@@ -273,14 +269,14 @@ Parameters *load_parameters(const char *filename)
     pParameters->maxk = (size_t)(pParameters->height / pParameters->spatial_step);
 
     // Parallelization:
-    MPI_Comm_size(MPI_COMM_WORLD, &pParameters->max_rank);
+    MPI_Comm_size(MPI_COMM_WORLD, &pParameters->ranks);
     MPI_Comm_rank(MPI_COMM_WORLD, &pParameters->rank);
 
-    pParameters->startk = pParameters->maxk * pParameters->rank / pParameters->max_rank;
-    pParameters->endk = pParameters->maxk * (pParameters->rank + 1) / pParameters->max_rank;
-    pParameters->k_layers = pParameters->endk - pParameters->startk;
+    size_t startk = pParameters->maxk * pParameters->rank / pParameters->ranks;
+    size_t endk = pParameters->maxk * (pParameters->rank + 1) / pParameters->ranks;
+    pParameters->k_layers = endk - startk;
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
-    pParameters->upper_cpu = pParameters->rank < pParameters->max_rank - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
+    pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
 
     return pParameters;
 }
@@ -290,7 +286,7 @@ Parameters *load_parameters(const char *filename)
  *  params: The parameters of the simulation
  * Returns:
  *  A pointer to the oven structure
-**/
+*/
 Oven *compute_oven(Parameters *params)
 {
     Oven *r = Malloc(sizeof(Oven));
@@ -334,7 +330,7 @@ Oven *compute_oven(Parameters *params)
 /** Allocates and initialize to 0.0 all the components of each field at a given time t.
  * Parameters:
  *  params: The parameters of the simulation
-**/
+*/
 Fields *initialize_fields(Parameters *params)
 {
     Fields *pFields = Malloc(sizeof(Fields));
@@ -410,7 +406,7 @@ Fields *initialize_fields(Parameters *params)
 /** Allocates and initialize to 0.0 all the components of each field at a given time t for this cpu
  * Parameters:
  *  params: The parameters of the simulation
-**/
+*/
 Fields *initialize_cpu_fields(Parameters *params)
 {
     Fields *pFields = Malloc(sizeof(Fields));
@@ -490,7 +486,7 @@ Fields *initialize_cpu_fields(Parameters *params)
  *  mi, mj: The additionnal sizes of dimensions X and Y.
  * Returns:
  *  The index in a 1D array
-**/
+*/
 size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_t mi, size_t mj)
 {
     return i + j * (params->maxi + mi) + k * (params->maxi + mi) * (params->maxj + mj);
@@ -530,7 +526,7 @@ size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
  * Parameters:
  *  Ey: The y component of the Energy fields
  *  p:   The parameters of the simulation
-**/
+*/
 void set_initial_conditions(double *Ey, Parameters *p)
 {
     //TODO: Parallelized version
@@ -546,7 +542,7 @@ void set_initial_conditions(double *Ey, Parameters *p)
  * Parameters:
  *  p:      The parameters of the simulation
  *  fields: The fields
-**/
+*/
 void update_H_field(Parameters *p, Fields *fields)
 {
     // Shortcuts to avoid pointers exploration in the loop.
@@ -563,13 +559,13 @@ void update_H_field(Parameters *p, Fields *fields)
 
     for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers+1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k)
                 Hx[kHx(p, i, j, k)] += factor * ((Ey[kEy(p, i, j, k + 1)] - Ey[kEy(p, i, j, k)]) -
                                                  (Ez[kEz(p, i, j + 1, k)] - Ez[kEz(p, i, j, k)]));
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj + 1; ++j)
-            for (k = 1; k < p->k_layers+1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k)
                 Hy[kHy(p, i, j, k)] += factor * ((Ez[kEz(p, i + 1, j, k)] - Ez[kEz(p, i, j, k)]) -
                                                  (Ex[kEx(p, i, j, k + 1)] - Ex[kEx(p, i, j, k)]));
 
@@ -584,7 +580,7 @@ void update_H_field(Parameters *p, Fields *fields)
  * Parameters:
  *  p:      The parameters of the simulation
  *  fields: The fields
-**/
+*/
 void update_E_field(Parameters *p, Fields *fields)
 {
     // Shortcuts to avoid pointers exploration in the loop.
@@ -601,18 +597,18 @@ void update_E_field(Parameters *p, Fields *fields)
 
     for (i = 1; i < p->maxi; ++i)
         for (j = 1; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers+1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k)
                 Ex[kEx(p, i, j, k)] += factor * ((Hz[kHz(p, i, j, k)] - Hz[kHz(p, i, j - 1, k)]) -
                                                  (Hy[kHy(p, i, j, k)] - Hy[kHy(p, i, j, k - 1)]));
     for (i = 1; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers+1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k)
                 Ey[kEy(p, i, j, k)] += factor * ((Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j, k - 1)]) -
                                                  (Hz[kHz(p, i, j, k)] - Hz[kHz(p, i - 1, j, k)]));
 
     for (i = 1; i < p->maxi; ++i)
         for (j = 1; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers+1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k)
                 Ez[kEz(p, i, j, k)] += factor * ((Hy[kHy(p, i, j, k)] - Hy[kHy(p, i - 1, j, k)]) -
                                                  (Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j - 1, k)]));
 }
@@ -625,7 +621,7 @@ void update_E_field(Parameters *p, Fields *fields)
  *  ofi: The offset in X (related to the space size)
  *  ofj: The offset in Y (related to the space size)
  *  ofk: The offset in Z (related to the space size)
-**/
+*/
 void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t ofj, size_t ofk)
 {
     size_t t = 0;
@@ -646,7 +642,7 @@ void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t 
  *  ofi: The offset in X (related to the space size)
  *  ofj: The offset in Y (related to the space size)
  *  ofk: The offset in Z (related to the space size)
-**/
+*/
 void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t ofj, size_t ofk)
 {
     size_t t = 0;
@@ -664,7 +660,7 @@ void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t 
  *  pParams: The parameters of the simulation
  *  pOven: The oven computed
  *  iteration: The iteration count
-**/
+*/
 void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven, int iteration)
 {
     char filename[100];
@@ -719,7 +715,7 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
  * Parameters:
  *  pFields: The simulated fields
  *  p:  The parameters of the simulation
-**/
+*/
 double calculate_E_energy(Fields *pFields, Parameters *p)
 {
     double *Ex = pFields->Ex;
@@ -758,7 +754,7 @@ double calculate_E_energy(Fields *pFields, Parameters *p)
  * Parameters:
  *  pFields: The simulated fields
  *  p: The parameters of the simulation
-**/
+*/
 double calculate_H_energy(Fields *pFields, Parameters *p)
 {
     double *Hx = pFields->Hx;
@@ -799,7 +795,7 @@ double calculate_H_energy(Fields *pFields, Parameters *p)
  *  pFields: The simulated fields
  *  pValidationFields: The containers for the validation fields
  *  timer: The time of the simulation (in seconds)
-**/
+*/
 void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double timer)
 {
     double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2)) / PI;
@@ -845,7 +841,7 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
  *  p: The parameters of the simulation
  *  pFields: The fields
  *  timer: The time of the simulation
-**/
+*/
 void set_source(Parameters *p, Fields *pFields, double time_counter)
 {
     double *Ex = pFields->Ex;
@@ -894,10 +890,10 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
  *  p:             The parameters of the simulation
  * Warning:
  *  This function needs that each process sends its results. Risk of deadlock!
-**/
+*/
 void join_fields(Fields *join_fields, Parameters *p)
 {
-    for (int i = 1; i < p->max_rank; ++i)
+    for (int i = 1; i < p->ranks; ++i)
     {
         MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, i * p->k_layers)], p->maxj * p->maxi * p->k_layers, MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, i * p->k_layers)], p->maxj * p->maxi * p->k_layers, MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
@@ -914,7 +910,7 @@ void join_fields(Fields *join_fields, Parameters *p)
  *  p: The parameters of the simulation
  * Warning:
  *  This function needs that the main process receives the result. Risk of deadlock!
-**/
+*/
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
     MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], p->maxj * p->maxi * p->k_layers, MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
@@ -931,7 +927,7 @@ void send_fields_to_main(Fields *pFields, Parameters *p)
  *  pValidationFields: The ValidationFields
  *  pParams:    The parameters of the simulation
  *  pOven: The oven properties
-**/
+*/
 void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
 {
     double timer;
@@ -950,9 +946,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
             update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, 0.0);
     }
     else
-    {
         send_fields_to_main(pFields, pParams);
-    }
 
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
@@ -1042,13 +1036,9 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         update_E_field(pParams, pFields);
 
         if (joined_fields != NULL)
-        {
             join_fields(joined_fields, pParams);
-        }
         else
-        {
             send_fields_to_main(pFields, pParams);
-        }
 
         if (pParams->mode == VALIDATION_MODE)
         {
@@ -1067,7 +1057,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 ------------------------------------------------------
 ---------------------------------------- Main function
 ------------------------------------------------------
-**/
+*/
 int main(int argc, char *argv[])
 {
     printf("Welcome into our microwave oven eletrico-magnetic field simulator! \n");
