@@ -878,10 +878,10 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
         for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         {
-            Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
-            Ex[kEx(p, i, j, 0)] = 0;
-            Hz[kHz(p, i, j, 0)] = 0;
-            Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
+            Ez[kEz(p, i, j, 1)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
+            Ex[kEx(p, i, j, 1)] = 0;
+            Hz[kHz(p, i, j, 1)] = 0;
+            Hx[kHx(p, i, j, 1)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
         }
 }
 
@@ -892,18 +892,27 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
  * Warning:
  *  This function needs that each process sends its results. Risk of deadlock!
 */
-void join_fields(Fields *join_fields, Parameters *p)
+void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 {
     size_t size_of_all_xy_planes = p->maxj * p->maxi * (p->k_layers + p->ranks-1);
     for (int i = 1; i < p->ranks; ++i)
     {
         size_t k_offset = i * p->k_layers;
-        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    }
+
+    for (int i=0; i<p->k_layers; i++){
+        join_fields->Ey[kEy(p, 0, 0, i)] = pFields->Ey[kEy(p, 0, 0, i)];
+        join_fields->Ex[kEx(p, 0, 0, i)] = pFields->Ex[kEx(p, 0, 0, i)];
+        join_fields->Ez[kEz(p, 0, 0, i)] = pFields->Ez[kEz(p, 0, 0, i)];
+        join_fields->Hx[kHx(p, 0, 0, i)] = pFields->Hx[kHx(p, 0, 0, i)];
+        join_fields->Hy[kHy(p, 0, 0, i)] = pFields->Hy[kHy(p, 0, 0, i)];
+        join_fields->Hz[kHz(p, 0, 0, i)] = pFields->Hz[kHz(p, 0, 0, i)];
     }
 }
 
@@ -1036,7 +1045,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
     if (pParams->rank == 0)
     {
         joined_fields = initialize_fields(pParams);
-        join_fields(joined_fields, pParams);
+        join_fields(joined_fields, pParams, pFields);
         total_energy = calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams);
 
         if (pParams->mode == VALIDATION_MODE)
@@ -1050,7 +1059,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         if (joined_fields != NULL && iteration % pParams->sampling_rate == 0)
             write_silo(joined_fields, pValidationFields, pParams, pOven, iteration);
 
-        if (pParams->mode == COMPUTATION_MODE)
+        if (pParams->mode == COMPUTATION_MODE && pParams->rank==0)
             set_source(pParams, pFields, timer);
 
         //exchange_E_field(pParams, pFields);
@@ -1059,13 +1068,13 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 
         //exchange_H_field(pParams, pFields);
 
-        if (pParams->mode == COMPUTATION_MODE)
+        if (pParams->mode == COMPUTATION_MODE && pParams->rank==0)
             set_source(pParams, pFields, timer);
 
         update_E_field(pParams, pFields);
 
         if (joined_fields != NULL)
-            join_fields(joined_fields, pParams);
+            join_fields(joined_fields, pParams, pFields);
         else
             send_fields_to_main(pFields, pParams);
 
