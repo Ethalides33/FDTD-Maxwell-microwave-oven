@@ -7,14 +7,25 @@
             "request": "launch",
             "program": "/usr/bin/mpirun",
             "args": [
+                "-v",
                 "-np",
                 "4",
-                "${fileDirname}/${fileBasenameNoExtension}.out",
+                "${fileDirname}/microwave",
                 "params.txt"
             ],
+            "preLaunchTask": "mpicc build active file",
             "stopAtEntry": false,
             "cwd": "${workspaceFolder}",
             "environment": [],
+            "MIMode": "gdb",
+            "setupCommands": [
+                {
+                    "description": "Enable pretty print for gdb",
+                    "text": "-enable-pretty-printing",
+                    "ignoreFailures": true
+                }
+            ],
+            "miDebuggerPath": "/usr/bin/gdb",
             "externalConsole": false,
         }
     ]

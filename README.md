@@ -76,6 +76,13 @@ $ make h5
 
 ## Usage
 Check the tutorial [here](https://mpitutorial.com/tutorials/mpi-hello-world/) for the parallel instructions
+
+On WSL, you may need to fix a "permission denied" error with the code:
+
+```bash
+$ echo 0 | sudo tee /proc/sys/kernel/yama/ptrace_scope
+```
+
 ```bash
 $ ./microwave ./params.txt
 ```

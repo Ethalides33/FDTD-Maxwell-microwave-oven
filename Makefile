@@ -18,6 +18,11 @@ parallel:
 	mkdir r
 	mpicc ${SRC} -lm -lsiloh5 -std=c99 -o ${EXE}
 
+paralleldbg:
+	make clean
+	mkdir r
+	mpicc ${SRC} -g -lm -lsiloh5 -std=c99 -o ${EXE}
+
 clean:
 	rm -rf r
-	rm -rf ${EXE} *.o
+	rm -rf ${EXE} *.o *.out

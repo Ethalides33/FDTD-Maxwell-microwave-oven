@@ -6,13 +6,13 @@
             "label": "gcc build active file",
             "command": "/usr/bin/gcc",
             "args": [
+                "${file}",
                 "-g",
                 "-lm",
                 "-lsiloh5",
                 "-std=c99",
-                "${file}",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}"
+                "${fileDirname}/microwave"
             ],
             "options": {
                 "cwd": "/usr/bin"
@@ -27,10 +27,13 @@
             "label": "mpicc build active file",
             "command": "/usr/bin/mpicc",
             "args": [
-                "-g",
                 "${file}",
+                "-g",
+                "-lm",
+                "-lsiloh5",
+                "-std=c99",
                 "-o",
-                "${fileDirname}/${fileBasenameNoExtension}.out"
+                "${fileDirname}/microwave"
             ],
             "options": {
                 "cwd": "/usr/bin"
