@@ -18,6 +18,9 @@ parallel:
 	mkdir r
 	mpicc ${SRC} -lm -lsiloh5 -std=c99 -o ${EXE}
 
+run:
+	mpirun -np 4 -v ${EXE} ./params.txt
+
 paralleldbg:
 	make clean
 	mkdir r

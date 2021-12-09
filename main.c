@@ -894,7 +894,7 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 */
 void join_fields(Fields *join_fields, Parameters *p)
 {
-    size_t size_of_all_xy_planes = p->maxj * p->maxi * p->k_layers;
+    size_t size_of_all_xy_planes = p->maxj * p->maxi * (p->k_layers + p->ranks-1);
     for (int i = 1; i < p->ranks; ++i)
     {
         size_t k_offset = i * p->k_layers;
@@ -1013,6 +1013,11 @@ void exchange_H_field(Parameters *p, Fields *f)
     }
 }
 
+static void init_fields(Fields *f, Parameters *p)
+{
+    *f = *initialize_fields(p);
+}
+
 /** Propagate the Electrical and Magnetic field using FDTD algorithm
  * Parameters:
  *  pFields: The fields
@@ -1048,11 +1053,11 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         if (pParams->mode == COMPUTATION_MODE)
             set_source(pParams, pFields, timer);
 
-        exchange_E_field(pParams, pFields);
+        //exchange_E_field(pParams, pFields);
 
         update_H_field(pParams, pFields);
 
-        exchange_H_field(pParams, pFields);
+        //exchange_H_field(pParams, pFields);
 
         if (pParams->mode == COMPUTATION_MODE)
             set_source(pParams, pFields, timer);
