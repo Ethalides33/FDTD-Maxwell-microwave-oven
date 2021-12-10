@@ -328,6 +328,29 @@ Oven *compute_oven(Parameters *params)
     return r;
 }
 
+/** Gives the size of the simulation XY plane depending on the field/field component
+ * Parameters:
+ *  p:      The parameters of the simulation
+ *  fields: The fields
+ *  field:  The field for which you want the size of XY plane
+**/
+size_t sizeof_xy_plane(Parameters *p, Fields *fields, double *field)
+{
+    if(field == fields->Ex)
+        return p->maxi * (p->maxj+1);
+    if(field == fields->Ey)
+        return (p->maxi+1)*p->maxj;
+    if(field == fields->Ez)
+        return (p->maxi+1) * (p->maxj+1);
+    if(field == fields->Hx)
+        return (p->maxi+1)*p->maxj;
+    if(field == fields->Hy)
+        return p->maxi*(p->maxj+1);
+    if(field == fields->Hz)
+        return p->maxi * p->maxj;
+    return 0;
+}
+
 /** Allocates and initialize to 0.0 all the components of each field at a given time t.
  * Parameters:
  *  params: The parameters of the simulation
@@ -895,18 +918,15 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 {
     //printf("rank in fct: %d \n", p->rank);
-    size_t size_of_all_xy_planes = p->maxj * p->maxi * (p->k_layers + p->ranks-1); // I DONT THINK THEY ALL HAVE THE SAME SIZE!! + p->ranks-1????,
     for (int i = 1; i < p->ranks; ++i)
-    {    //printf("rank in FOR: %d \n", p->rank);
+    {
         size_t k_offset = i * p->k_layers;
-        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        //printf("raNK AFTER RECIEVE: %d \n", p->rank);
-
+        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields,join_fields->Ex)* (p->k_layers + p->ranks-1), MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields,join_fields->Ey)* (p->k_layers + p->ranks-1), MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields,join_fields->Ez)* (p->k_layers + p->ranks-1), MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields,join_fields->Hx)* (p->k_layers + p->ranks-1), MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields,join_fields->Hy)* (p->k_layers + p->ranks-1), MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields,join_fields->Hz)* (p->k_layers + p->ranks-1), MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
     for (int i=0; i<p->maxi; i++)
@@ -932,14 +952,12 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 */
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
-    //printf("rank %d sending \n", p->rank);
-    size_t size_of_all_xy_planes = p->maxj * p->maxi * p->k_layers;
-    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ex) * (p->k_layers-2), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ey) * (p->k_layers-2), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ez) * (p->k_layers-2), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hx) * (p->k_layers-2), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hy) * (p->k_layers-2), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hz) * (p->k_layers-2), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
 }
 
 /** MPI: Exhanges E field between ranks
