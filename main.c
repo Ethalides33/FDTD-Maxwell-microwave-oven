@@ -99,6 +99,7 @@ typedef struct chainedAllocated
  *    k_layers:         The number of layers on the (X,Y) plane treaten by current CPU
  *    lower_cpu:        The rank of the CPU working on the plane below (Z-1)
  *    upper_cpu:        The rank of the CPU working on the plane above (Z+1)
+ *    ls:               The chained list of allocated objects
 */
 typedef struct parameters
 {
@@ -164,6 +165,8 @@ typedef struct fields
 ------------------------------------------------------
 */
 /** Free any allocated object with the Malloc function (see below)
+ * Parameters:
+ *  ls: The list of allocated objects
  * Description:
  *  This function free's the memory allocated for all
  *  the objects allocated with the next Malloc function
@@ -184,6 +187,7 @@ void *freeAll(ChainedAllocated *ls)
 
 /** Free the memory and throws an error, then exits with EXIT_FAILURE.
  * Parameters:
+ *  ls:     The chained list of allocated objects
  *  msg:    The message to throw before exit
 */
 void fail(ChainedAllocated *ls, const char *msg)
@@ -195,6 +199,8 @@ void fail(ChainedAllocated *ls, const char *msg)
 }
 
 /** Critical allocation (malloc or fail)
+ * Parameters:
+ *  pLs:    A pointer to the pointer of the list of allocated objects.
  * Description:
  *  In addition to critically check if the malloc properly worked,
  *  this function stores the reference to the new allocated object
@@ -229,6 +235,7 @@ void *Malloc(ChainedAllocated **pLs, size_t size)
 
 /** For an object allocated with the Malloc function above, frees the memory and removes the entry from the chained list.
  * Parameters:
+ *  ls:    A pointer to the list containing the allocated objects
  *  ptr:    The pointer to free
 */
 void Free(ChainedAllocated *ls, void *ptr)
@@ -257,10 +264,6 @@ Parameters *load_parameters(const char *filename)
     FILE *fParams = fopen(filename, "r");
     ChainedAllocated *ls = NULL;
     Parameters *pParameters = Malloc(&ls, sizeof(Parameters));
-    if(ls == NULL){
-        perror("Not updated LS pointer!");
-        exit(EXIT_FAILURE);
-    }
 
     if (!fParams)
         fail(ls, "Unable to open parameters file!");
@@ -1104,11 +1107,11 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         if (pParams->mode == COMPUTATION_MODE && pParams->rank==0)
             set_source(pParams, pFields, timer);
 
-        //exchange_E_field(pParams, pFields);
+        exchange_E_field(pParams, pFields);
 
         update_H_field(pParams, pFields);
 
-        //exchange_H_field(pParams, pFields);
+        exchange_H_field(pParams, pFields);
 
         if (pParams->mode == COMPUTATION_MODE && pParams->rank==0)
             set_source(pParams, pFields, timer);
