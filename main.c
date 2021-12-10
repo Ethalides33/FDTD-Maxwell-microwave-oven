@@ -621,12 +621,12 @@ void update_E_field(Parameters *p, Fields *fields)
 
     for (i = 1; i < p->maxi; ++i)
         for (j = 1; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers + 1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k) // why +1?
                 Ex[kEx(p, i, j, k)] += factor * ((Hz[kHz(p, i, j, k)] - Hz[kHz(p, i, j - 1, k)]) -
                                                  (Hy[kHy(p, i, j, k)] - Hy[kHy(p, i, j, k - 1)]));
     for (i = 1; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers + 1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k) // why +1?
                 Ey[kEy(p, i, j, k)] += factor * ((Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j, k - 1)]) -
                                                  (Hz[kHz(p, i, j, k)] - Hz[kHz(p, i - 1, j, k)]));
 
@@ -970,37 +970,37 @@ void exchange_E_field(Parameters *p, Fields *f)
     size_t size_of_xy_plane = p->maxi * p->maxj;
     if (p->rank % 2 == 0)
     {
-        MPI_Send(&f->Ex[kEx(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ex[kEx(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD);
-        MPI_Recv(f->Ex, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(f->Ex, sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        MPI_Send(&f->Ey[kEy(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ey[kEy(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD);
-        MPI_Recv(f->Ey, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(f->Ey, sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        MPI_Send(&f->Ez[kEz(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ez[kEz(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD);
-        MPI_Recv(f->Ez, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ez[kEz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(f->Ez, sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
     else
     {
-        MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ex[kEx(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(f->Ex, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ex[kEx(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(f->Ex, sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD);
 
-        MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ey[kEy(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(f->Ey, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ey[kEy(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(f->Ey, sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD);
 
-        MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ez[kEz(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(f->Ez, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Ez[kEz(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(f->Ez, sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Ez[kEz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD);
     }
 }
 
@@ -1014,37 +1014,37 @@ void exchange_H_field(Parameters *p, Fields *f)
     size_t size_of_xy_plane = p->maxi * p->maxj;
     if (p->rank % 2 == 0)
     {
-        MPI_Send(&f->Hx[kHx(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hx[kHx(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD);
-        MPI_Recv(f->Hx, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(f->Hx, sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        MPI_Send(&f->Hy[kHy(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hy[kHy(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD);
-        MPI_Recv(f->Hy, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(f->Hy, sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-        MPI_Send(&f->Hz[kHz(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hz[kHz(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD);
-        MPI_Recv(f->Hz, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(f->Hz, sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
     else
     {
-        MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hx[kHx(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(f->Hx, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hx[kHx(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(f->Hx, sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD);
 
-        MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hy[kHy(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(f->Hy, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hy[kHy(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(f->Hy, sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD);
 
-        MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hz[kHz(p, 0, 0, 1)], size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD);
-        MPI_Recv(f->Hz, size_of_xy_plane, MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Send(&f->Hz[kHz(p, 0, 0, p->k_layers)], size_of_xy_plane, MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD);
+        MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD);
+        MPI_Recv(f->Hz, sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Send(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD);
     }
 }
 
