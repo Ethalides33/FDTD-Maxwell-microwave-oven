@@ -572,7 +572,7 @@ void set_initial_conditions(double *Ey, Parameters *p)
     size_t i, j, k;
     for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->k_layers + 1; ++k)
+            for (k = 0; k < p->k_layers; ++k)
                 Ey[kEy(p, i, j, k)] = sin(PI * (p->startk + k) * p->spatial_step / p->width) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
@@ -1096,7 +1096,7 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
-        if (joined_fields != NULL && iteration % pParams->sampling_rate == 0)
+        if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
             write_silo(joined_fields, pValidationFields, pParams, pOven, iteration);
 
         if (pParams->mode == COMPUTATION_MODE && pParams->rank==0)
@@ -1113,15 +1113,14 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
 
         update_E_field(pParams, pFields);
 
-        if (joined_fields != NULL)
+        if (pParams->rank == 0 && joined_fields != NULL)
             join_fields(joined_fields, pParams, pFields);
         else
             send_fields_to_main(pFields, pParams);
 
-        if (pParams->mode == VALIDATION_MODE)
+        if (pParams->rank == 0 && pParams->mode == VALIDATION_MODE)
         {
             update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, timer);
-
             printf("Electrical energy: %0.20f \n", calculate_E_energy(joined_fields, pParams));
             printf("Magnetic energy: %0.20f \n", calculate_H_energy(joined_fields, pParams));
             printf("Tot energy: %0.20f \n", calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams));

@@ -5,13 +5,9 @@
             "name": "(mpirun) Launch",
             "type": "cppdbg",
             "request": "launch",
-            "program": "/usr/bin/mpirun",
+            "program": "/usr/bin/make",
             "args": [
-                "-v",
-                "-np",
-                "4",
-                "${fileDirname}/microwave",
-                "params.txt"
+                "rungdb"
             ],
             "preLaunchTask": "mpicc build active file",
             "stopAtEntry": false,

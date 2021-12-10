@@ -21,6 +21,9 @@ parallel:
 run:
 	mpirun -np 4 -v ${EXE} ./params.txt
 
+rungdb:
+	mpirun -n 4 xterm -hold -e gdb -ex run --args ${EXE} ./params.txt
+
 paralleldbg:
 	make clean
 	mkdir r
