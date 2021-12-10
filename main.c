@@ -632,9 +632,13 @@ void update_E_field(Parameters *p, Fields *fields)
 
     for (i = 1; i < p->maxi; ++i)
         for (j = 1; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers + 1; ++k)
+            for (k = 1; k < p->k_layers + 1; ++k){
                 Ez[kEz(p, i, j, k)] += factor * ((Hy[kHy(p, i, j, k)] - Hy[kHy(p, i - 1, j, k)]) -
                                                  (Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j - 1, k)]));
+            }/*             if( k==p->k_layers) //k==p->k_layers ||
+                    Ez[kEz(p, i, j, k)] = 2;
+                if (k==1)
+                    Ez[kEz(p, i, j, k)] = -2;*/
 }
 
 /** Computes the mean of an electrical field 
@@ -931,15 +935,15 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 
     for (int i=0; i<p->maxi; i++)
         for(int j=0; j<p->maxj; j++)
-            for (int k=1; k<p->k_layers; k++)
+            for (int k=1; k<p->k_layers+1; k++)
             {
                 //printf("rank: %d \n", p->rank);
-                join_fields->Ey[kEy(p, i, j, k)] = pFields->Ey[kEy(p, i, j, k)];
-                join_fields->Ex[kEx(p, i, j, k)] = pFields->Ex[kEx(p, i, j, k)];
-                join_fields->Ez[kEz(p, i, j, k)] = pFields->Ez[kEz(p, i, j, k)];
-                join_fields->Hx[kHx(p, i, j, k)] = pFields->Hx[kHx(p, i, j, k)];
-                join_fields->Hy[kHy(p, i, j, k)] = pFields->Hy[kHy(p, i, j, k)];
-                join_fields->Hz[kHz(p, i, j, k)] = pFields->Hz[kHz(p, i, j, k)];
+                join_fields->Ey[kEy(p, i, j, k-1)] = pFields->Ey[kEy(p, i, j, k)];
+                join_fields->Ex[kEx(p, i, j, k-1)] = pFields->Ex[kEx(p, i, j, k)];
+                join_fields->Ez[kEz(p, i, j, k-1)] = pFields->Ez[kEz(p, i, j, k)];
+                join_fields->Hx[kHx(p, i, j, k-1)] = pFields->Hx[kHx(p, i, j, k)];
+                join_fields->Hy[kHy(p, i, j, k-1)] = pFields->Hy[kHy(p, i, j, k)];
+                join_fields->Hz[kHz(p, i, j, k-1)] = pFields->Hz[kHz(p, i, j, k)];
             }
 }
 
@@ -952,12 +956,12 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 */
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
-    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ex) * (p->k_layers-2), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ey) * (p->k_layers-2), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ez) * (p->k_layers-2), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hx) * (p->k_layers-2), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hy) * (p->k_layers-2), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hz) * (p->k_layers-2), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ex) * (p->k_layers), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ey) * (p->k_layers), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ez) * (p->k_layers), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hx) * (p->k_layers), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hy) * (p->k_layers), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hz) * (p->k_layers), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
 }
 
 /** MPI: Exhanges E field between ranks
@@ -967,7 +971,6 @@ void send_fields_to_main(Fields *pFields, Parameters *p)
 */
 void exchange_E_field(Parameters *p, Fields *f)
 {
-    size_t size_of_xy_plane = p->maxi * p->maxj;
     if (p->rank % 2 == 0)
     {
         MPI_Send(&f->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD);
@@ -1011,7 +1014,6 @@ void exchange_E_field(Parameters *p, Fields *f)
 */
 void exchange_H_field(Parameters *p, Fields *f)
 {
-    size_t size_of_xy_plane = p->maxi * p->maxj;
     if (p->rank % 2 == 0)
     {
         MPI_Send(&f->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD);
