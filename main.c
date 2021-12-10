@@ -65,6 +65,21 @@ typedef enum TAGS
     HZ_TAG_TO_MAIN,
 } TAGS;
 
+/** An approach to manage memory allocations in a chained list
+ * Properties:
+ *      previous:   The previous allocated object
+ *      ptr:        The current allocated object
+ * Description:
+ *      This structure allow us to store each allocated object
+ *      into a chained list with a LiFo strategy so when we
+ *      free up all memory we take care of the inner most objects
+*/
+typedef struct chainedAllocated
+{
+    struct chainedAllocated *previous;
+    void *ptr;
+} ChainedAllocated;
+
 /** Definition of the scene
  * Properties:
  *    width:            a in figure (y, in paper cs)
@@ -106,6 +121,7 @@ typedef struct parameters
     int lower_cpu;
     int upper_cpu;
 
+    ChainedAllocated *ls;
 } Parameters;
 
 /** Definition of the oven mesh (can be derived directly from Parameters), it's useless to recompute it at each timestep
@@ -140,23 +156,6 @@ typedef struct fields
 
 } Fields;
 
-/** An approach to manage memory allocations in a chained list
- * Properties:
- *      previous:   The previous allocated object
- *      ptr:        The current allocated object
- * Description:
- *      This structure allow us to store each allocated object
- *      into a chained list with a LiFo strategy so when we
- *      free up all memory we take care of the inner most objects
-*/
-typedef struct chainedAllocated
-{
-    struct chainedAllocated *previous;
-    void *ptr;
-} ChainedAllocated;
-
-// Superglobal variable
-static ChainedAllocated *allocatedLs;
 
 /**
 ------------------------------------------------------
@@ -164,7 +163,6 @@ static ChainedAllocated *allocatedLs;
 ------------------------- Signatures & Implementations
 ------------------------------------------------------
 */
-
 /** Free any allocated object with the Malloc function (see below)
  * Description:
  *  This function free's the memory allocated for all
@@ -172,25 +170,26 @@ static ChainedAllocated *allocatedLs;
  *  in the reverse way of their allocation (LiFo) in order
  *  to deal with nested structures.
 */
-void *freeAll()
+void *freeAll(ChainedAllocated *ls)
 {
-    while (allocatedLs)
+    while (ls && ls->ptr != ls)
     {
-        free(allocatedLs->ptr);
-        ChainedAllocated *previous = allocatedLs->previous;
-        free(allocatedLs);
-        allocatedLs = previous;
+        free(ls->ptr);
+        ChainedAllocated *previous = ls->previous;
+        free(ls);
+        ls = previous;
     }
+    free(ls);
 }
 
 /** Free the memory and throws an error, then exits with EXIT_FAILURE.
  * Parameters:
  *  msg:    The message to throw before exit
 */
-void fail(const char *msg)
+void fail(ChainedAllocated *ls, const char *msg)
 {
     perror(msg);
-    freeAll();
+    freeAll(ls);
     MPI_Finalize();
     exit(EXIT_FAILURE);
 }
@@ -202,22 +201,29 @@ void fail(const char *msg)
  *  in the superglobal chained list which is then used to free the
  *  memory before exit.
 */
-void *Malloc(size_t size)
+void *Malloc(ChainedAllocated **pLs, size_t size)
 {
-    if (allocatedLs == NULL)
-        allocatedLs = malloc(sizeof(ChainedAllocated));
-    else
+    ChainedAllocated *ls = *pLs;
+    if (ls == NULL)
     {
-        ChainedAllocated *successor = malloc(sizeof(ChainedAllocated));
-        successor->previous = allocatedLs;
-        allocatedLs = successor;
+        ls = malloc(sizeof(ChainedAllocated));
+        ls->ptr = ls;
+        ls->previous = NULL;
+        *pLs=ls;
     }
+    
+    ChainedAllocated *successor = malloc(sizeof(ChainedAllocated));
+    successor->previous = ls;
+    ls = successor;
+    *pLs=ls;
+    
     void *ptr = malloc(size);
 
-    allocatedLs->ptr = ptr;
+    ls->ptr = ptr;
 
     if (!ptr)
-        fail("CRITICAL ERROR: Could not allocate enough memory!");
+        fail(ls, "CRITICAL ERROR: Could not allocate enough memory!");
+
     return ptr;
 }
 
@@ -225,10 +231,10 @@ void *Malloc(size_t size)
  * Parameters:
  *  ptr:    The pointer to free
 */
-void Free(void *ptr)
+void Free(ChainedAllocated *ls, void *ptr)
 {
-    ChainedAllocated *successor = allocatedLs;
-    ChainedAllocated *current = allocatedLs;
+    ChainedAllocated *successor = ls;
+    ChainedAllocated *current = ls;
     while (current->ptr != ptr)
     {
         successor = current;
@@ -249,10 +255,15 @@ void Free(void *ptr)
 Parameters *load_parameters(const char *filename)
 {
     FILE *fParams = fopen(filename, "r");
-    Parameters *pParameters = Malloc(sizeof(Parameters));
+    ChainedAllocated *ls = NULL;
+    Parameters *pParameters = Malloc(&ls, sizeof(Parameters));
+    if(ls == NULL){
+        perror("Not updated LS pointer!");
+        exit(EXIT_FAILURE);
+    }
 
     if (!fParams)
-        fail("Unable to open parameters file!");
+        fail(ls, "Unable to open parameters file!");
 
     fscanf(fParams, "%f", &pParameters->length);
     fscanf(fParams, "%f", &pParameters->width);
@@ -278,6 +289,7 @@ Parameters *load_parameters(const char *filename)
     pParameters->k_layers = endk - startk;
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
+    pParameters->ls=ls;
 
     return pParameters;
 }
@@ -290,22 +302,22 @@ Parameters *load_parameters(const char *filename)
 */
 Oven *compute_oven(Parameters *params)
 {
-    Oven *r = Malloc(sizeof(Oven));
+    Oven *r = Malloc(&params->ls, sizeof(Oven));
 
-    r->dims = Malloc(sizeof(size_t) * 3);
-    r->vdims = Malloc(sizeof(size_t) * 3);
-    r->coords = Malloc(sizeof(double **) * 3);
+    r->dims = Malloc(&params->ls, sizeof(size_t) * 3);
+    r->vdims = Malloc(&params->ls, sizeof(size_t) * 3);
+    r->coords = Malloc(&params->ls, sizeof(double **) * 3);
     r->dims[0] = params->maxi + 1;
     r->dims[1] = params->maxj + 1;
     r->dims[2] = params->maxk + 1;
     r->vdims[0] = params->maxi;
     r->vdims[1] = params->maxj;
     r->vdims[2] = params->maxk;
-    r->tmpV = Malloc(sizeof(double) * params->maxi * params->maxj * params->maxk);
+    r->tmpV = Malloc(&params->ls, sizeof(double) * params->maxi * params->maxj * params->maxk);
 
-    double *x = Malloc((params->maxi + 1) * sizeof(double));
-    double *y = Malloc((params->maxj + 1) * sizeof(double));
-    double *z = Malloc((params->maxk + 1) * sizeof(double));
+    double *x = Malloc(&params->ls, (params->maxi + 1) * sizeof(double));
+    double *y = Malloc(&params->ls, (params->maxj + 1) * sizeof(double));
+    double *z = Malloc(&params->ls, (params->maxk + 1) * sizeof(double));
 
     //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
     double dx = params->spatial_step;
@@ -357,12 +369,12 @@ size_t sizeof_xy_plane(Parameters *p, Fields *fields, double *field)
 */
 Fields *initialize_fields(Parameters *params)
 {
-    Fields *pFields = Malloc(sizeof(Fields));
+    Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
     size_t space_size = params->maxi * (params->maxj + 1) * (params->maxk + 1);
 
-    pFields->Ex = Malloc(sizeof(double) * space_size);
+    pFields->Ex = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -373,7 +385,7 @@ Fields *initialize_fields(Parameters *params)
     // Ey
     space_size = (params->maxi + 1) * params->maxj * (params->maxk + 1);
 
-    pFields->Ey = Malloc(sizeof(double) * space_size);
+    pFields->Ey = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -384,7 +396,7 @@ Fields *initialize_fields(Parameters *params)
     // Ez
     space_size = (params->maxi + 1) * (params->maxj + 1) * params->maxk;
 
-    pFields->Ez = Malloc(sizeof(double) * space_size);
+    pFields->Ez = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -395,7 +407,7 @@ Fields *initialize_fields(Parameters *params)
     // Hx
     space_size = (params->maxi + 1) * params->maxj * params->maxk;
 
-    pFields->Hx = Malloc(sizeof(double) * space_size);
+    pFields->Hx = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -406,7 +418,7 @@ Fields *initialize_fields(Parameters *params)
     // Hy
     space_size = params->maxi * (params->maxj + 1) * params->maxk;
 
-    pFields->Hy = Malloc(sizeof(double) * space_size);
+    pFields->Hy = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -416,7 +428,7 @@ Fields *initialize_fields(Parameters *params)
 
     // Hz
     space_size = params->maxi * params->maxj * (params->maxk + 1);
-    pFields->Hz = Malloc(sizeof(double) * space_size);
+    pFields->Hz = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -433,12 +445,12 @@ Fields *initialize_fields(Parameters *params)
 */
 Fields *initialize_cpu_fields(Parameters *params)
 {
-    Fields *pFields = Malloc(sizeof(Fields));
+    Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
     size_t space_size = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
 
-    pFields->Ex = Malloc(sizeof(double) * space_size);
+    pFields->Ex = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -449,7 +461,7 @@ Fields *initialize_cpu_fields(Parameters *params)
     // Ey
     space_size = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
 
-    pFields->Ey = Malloc(sizeof(double) * space_size);
+    pFields->Ey = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -460,7 +472,7 @@ Fields *initialize_cpu_fields(Parameters *params)
     // Ez
     space_size = (params->maxi + 1) * (params->maxj + 1) * (params->k_layers + 2);
 
-    pFields->Ez = Malloc(sizeof(double) * space_size);
+    pFields->Ez = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -471,7 +483,7 @@ Fields *initialize_cpu_fields(Parameters *params)
     // Hx
     space_size = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
 
-    pFields->Hx = Malloc(sizeof(double) * space_size);
+    pFields->Hx = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -482,7 +494,7 @@ Fields *initialize_cpu_fields(Parameters *params)
     // Hy
     space_size = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
 
-    pFields->Hy = Malloc(sizeof(double) * space_size);
+    pFields->Hy = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -492,7 +504,7 @@ Fields *initialize_cpu_fields(Parameters *params)
 
     // Hz
     space_size = params->maxi * params->maxj * (params->k_layers + 2);
-    pFields->Hz = Malloc(sizeof(double) * space_size);
+    pFields->Hz = Malloc(&params->ls, sizeof(double) * space_size);
 
     while (0 < space_size)
     {
@@ -696,9 +708,7 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
 
     DBfile *dbfile = DBCreate(filename, DB_CLOBBER, DB_LOCAL, NULL, DB_PDB);
     if (!dbfile)
-    {
-        fail("Could not create DB\n");
-    }
+        fail(pParams->ls, "Could not create DB\n");
 
     DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pOven->coords, pOven->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
 
@@ -1138,13 +1148,13 @@ int main(int argc, char *argv[])
         printf("Welcome into our microwave oven eletrico-magnetic field simulator! \n");
 
     if (argc != 2)
-        fail("This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
+        fail(NULL, "This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
 
     printf("Process %d: Loading the parameters of the simulation...\n", rank);
     Parameters *pParameters = load_parameters(argv[1]);
 
     if (pParameters->time_step > pParameters->simulation_time)
-        fail("The time step must be lower than the simulation time!");
+        fail(pParameters->ls, "The time step must be lower than the simulation time!");
 
     printf("Process %d: Creating mesh\n", rank);
     Oven *pOven = compute_oven(pParameters);
@@ -1160,9 +1170,9 @@ int main(int argc, char *argv[])
             pValidationFields = initialize_fields(pParameters);
             printf("Main process: Validation mode activated. \n");
             // Free what's not needed for validation.
-            Free(pValidationFields->Ex);
-            Free(pValidationFields->Ez);
-            Free(pValidationFields->Hy);
+            Free(pParameters->ls,pValidationFields->Ex);
+            Free(pParameters->ls,pValidationFields->Ez);
+            Free(pParameters->ls,pValidationFields->Hy);
         }
         printf("Process %d: Setting initial conditions\n", rank);
         set_initial_conditions(pFields->Ey, pParameters);
@@ -1171,7 +1181,7 @@ int main(int argc, char *argv[])
     printf("Process %d: Launching simulation\n", rank);
     propagate_fields(pFields, pValidationFields, pParameters, pOven);
     printf("Process %d: Freeing memory...\n", rank);
-    freeAll();
+    freeAll(pParameters->ls);
 
     if (rank == 0)
         printf("Simulation complete!\n");
