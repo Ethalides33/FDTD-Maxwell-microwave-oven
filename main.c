@@ -118,6 +118,7 @@ typedef struct parameters
     // Parallelization
     int rank;
     int ranks;
+    size_t startk;
     size_t k_layers;
     int lower_cpu;
     int upper_cpu;
@@ -287,9 +288,9 @@ Parameters *load_parameters(const char *filename)
     MPI_Comm_size(MPI_COMM_WORLD, &pParameters->ranks);
     MPI_Comm_rank(MPI_COMM_WORLD, &pParameters->rank);
 
-    size_t startk = pParameters->maxk * pParameters->rank / pParameters->ranks;
+    pParameters->startk = pParameters->maxk * pParameters->rank / pParameters->ranks;
     size_t endk = pParameters->maxk * (pParameters->rank + 1) / pParameters->ranks;
-    pParameters->k_layers = endk - startk;
+    pParameters->k_layers = endk - pParameters->startk;
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
     pParameters->ls=ls;
@@ -568,12 +569,11 @@ size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 */
 void set_initial_conditions(double *Ey, Parameters *p)
 {
-    //TODO: Parallelized version
     size_t i, j, k;
     for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk + 1; ++k)
-                Ey[kEy(p, i, j, k)] = sin(PI * k * p->spatial_step / p->width) *
+            for (k = 0; k < p->k_layers + 1; ++k)
+                Ey[kEy(p, i, j, k)] = sin(PI * (p->startk + k) * p->spatial_step / p->width) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
 
@@ -1061,11 +1061,6 @@ void exchange_H_field(Parameters *p, Fields *f)
         MPI_Recv(f->Hz, sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Send(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD);
     }
-}
-
-static void init_fields(Fields *f, Parameters *p)
-{
-    *f = *initialize_fields(p);
 }
 
 /** Propagate the Electrical and Magnetic field using FDTD algorithm
