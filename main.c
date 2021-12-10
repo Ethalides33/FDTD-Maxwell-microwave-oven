@@ -894,26 +894,33 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 */
 void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 {
-    size_t size_of_all_xy_planes = p->maxj * p->maxi * (p->k_layers + p->ranks-1);
+    //printf("rank in fct: %d \n", p->rank);
+    size_t size_of_all_xy_planes = p->maxj * p->maxi * (p->k_layers + p->ranks-1); // I DONT THINK THEY ALL HAVE THE SAME SIZE!! + p->ranks-1????,
     for (int i = 1; i < p->ranks; ++i)
-    {
+    {    //printf("rank in FOR: %d \n", p->rank);
         size_t k_offset = i * p->k_layers;
-        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], size_of_all_xy_planes, MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        //printf("raNK AFTER RECIEVE: %d \n", p->rank);
+
     }
 
-    for (int i=0; i<p->k_layers; i++){
-        join_fields->Ey[kEy(p, 0, 0, i)] = pFields->Ey[kEy(p, 0, 0, i)];
-        join_fields->Ex[kEx(p, 0, 0, i)] = pFields->Ex[kEx(p, 0, 0, i)];
-        join_fields->Ez[kEz(p, 0, 0, i)] = pFields->Ez[kEz(p, 0, 0, i)];
-        join_fields->Hx[kHx(p, 0, 0, i)] = pFields->Hx[kHx(p, 0, 0, i)];
-        join_fields->Hy[kHy(p, 0, 0, i)] = pFields->Hy[kHy(p, 0, 0, i)];
-        join_fields->Hz[kHz(p, 0, 0, i)] = pFields->Hz[kHz(p, 0, 0, i)];
-    }
+    for (int i=0; i<p->maxi; i++)
+        for(int j=0; j<p->maxj; j++)
+            for (int k=1; k<p->k_layers; k++)
+            {
+                //printf("rank: %d \n", p->rank);
+                join_fields->Ey[kEy(p, i, j, k)] = pFields->Ey[kEy(p, i, j, k)];
+                join_fields->Ex[kEx(p, i, j, k)] = pFields->Ex[kEx(p, i, j, k)];
+                join_fields->Ez[kEz(p, i, j, k)] = pFields->Ez[kEz(p, i, j, k)];
+                join_fields->Hx[kHx(p, i, j, k)] = pFields->Hx[kHx(p, i, j, k)];
+                join_fields->Hy[kHy(p, i, j, k)] = pFields->Hy[kHy(p, i, j, k)];
+                join_fields->Hz[kHz(p, i, j, k)] = pFields->Hz[kHz(p, i, j, k)];
+            }
 }
 
 /** Sends each fields to main thread to be joined
@@ -925,6 +932,7 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 */
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
+    //printf("rank %d sending \n", p->rank);
     size_t size_of_all_xy_planes = p->maxj * p->maxi * p->k_layers;
     MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
     MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], size_of_all_xy_planes, MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
@@ -1041,9 +1049,10 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
     int iteration = 1;
 
     Fields *joined_fields;
-
+    //printf("rank before: %d \n", pParams->rank);
     if (pParams->rank == 0)
     {
+        //printf("rank: %d \n", pParams->rank);
         joined_fields = initialize_fields(pParams);
         join_fields(joined_fields, pParams, pFields);
         total_energy = calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams);
@@ -1051,8 +1060,11 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         if (pParams->mode == VALIDATION_MODE)
             update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, 0.0);
     }
-    else
+    else{
+        //printf("else: rank: %d \n", pParams->rank);
         send_fields_to_main(pFields, pParams);
+
+    }
 
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
