@@ -668,9 +668,11 @@ double calculate_H_energy(Fields *pFields, Parameters *p)
 
 void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double time_counter)
 {
-    double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2)) / PI;
+    double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->height, 2) + pow(PI / p->length, 2)) / PI;
+    //printf("fmnl: %0.20f \n", f_mnl);
     double omega = 2.0 * PI * f_mnl;
-    double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->width, 2));
+    double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->length, 2));
+    //printf("Zte: %0.20f \n", Z_te);
     //printf("frequency: %0.10f \n", f_mnl);
     //printf("z_te: %0.10f \n", Z_te);
 
@@ -679,30 +681,30 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
     double *vHz = pValidationFields->Hz;
 
     size_t i, j, k;
-    for (i = 1; i < p->maxi + 1; ++i)
+    for (i = 0; i < p->maxi+1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->maxk + 1; ++k)
+            for (k = 0; k < p->maxk+1; ++k)
                 vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
-                                        sin(PI * j * p->spatial_step / p->width) *
-                                        sin(PI * i * p->spatial_step / p->length)) -
+                                        sin(PI * i * p->spatial_step / p->length) *
+                                        sin(PI * k * p->spatial_step / p->height)) -
                                        pFields->Ey[kEy(p, i, j, k)];
 
-    for (i = 1; i < p->maxi + 1; ++i)
+    for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk; ++k)
                 vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
                                         sin(2 * PI * f_mnl * time_counter) *
-                                        sin(PI * j * p->spatial_step / p->width) *
-                                        cos(PI * i * p->spatial_step / p->length)) -
+                                        sin(PI * i * p->spatial_step / p->length) *
+                                        cos(PI * k * p->spatial_step / p->height)) -
                                        pFields->Hx[kHx(p, i, j, k)];
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->maxk + 1; ++k)
-                vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->width) *
+            for (k = 0; k < p->maxk + 1; ++k)
+                vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->length) *
                                         sin(2 * PI * f_mnl * time_counter) *
-                                        cos(PI * j * p->spatial_step / p->width) *
-                                        sin(PI * i * p->spatial_step / p->length)) -
+                                        cos(PI * i * p->spatial_step / p->length) *
+                                        sin(PI * k * p->spatial_step / p->height)) -
                                        pFields->Hz[kHz(p, i, j, k)];
 }
 
@@ -742,10 +744,10 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
         for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         {
-            Ez[kEz(p, i, j, 0)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
+            Ez[kEz(p, i, j, 0)] = 5*sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
             Ex[kEx(p, i, j, 0)] = 0;
             Hz[kHz(p, i, j, 0)] = 0;
-            Hx[kHx(p, i, j, 0)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
+            Hx[kHx(p, i, j, 0)] = -5*(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
         }
 }
 
