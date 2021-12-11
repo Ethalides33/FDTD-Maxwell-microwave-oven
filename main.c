@@ -178,6 +178,7 @@ void *freeAll(ChainedAllocated *ls)
 {
     while (ls && ls->ptr != ls)
     {
+        printf("Freing %p...\n", ls->ptr);
         free(ls->ptr);
         ChainedAllocated *previous = ls->previous;
         free(ls);
@@ -234,24 +235,51 @@ void *Malloc(ChainedAllocated **pLs, size_t size)
     return ptr;
 }
 
+/**
+ * @brief Utility to allocate array of doubles and initialize it to 0.0
+ * @param pLs The pointer to a pointer of the list of allocated pointers
+ * @param len The length of the array 
+ */
+double *Malloc_Double(ChainedAllocated **pLs, size_t len)
+{
+    double *ptr = Malloc(pLs, sizeof(double) * len);
+    while(0 < len){
+        --len;
+        ptr[len] = 0.0;
+    }
+    return ptr;
+}
+
+/**
+ * @brief Utility to print the chained list of pointers
+ * 
+ * @param ls The pointer to the chained list of poinetrs
+ */
+static void printHeap(ChainedAllocated *ls){
+    printf("==== Heap addresses dump ==== \n");
+    while (ls)
+    {
+        printf("Current: %p || ptr: %p || Previous: %p\n", ls, ls->ptr, ls->previous);
+        ls = ls->previous;
+    }
+    printf("==== Heap addresses dump END ==== \n");
+}
+
 /** For an object allocated with the Malloc function above, frees the memory and removes the entry from the chained list.
  * Parameters:
  *  ls:    A pointer to the list containing the allocated objects
  *  ptr:    The pointer to free
 */
-void Free(ChainedAllocated *ls, void *ptr)
+void Free(ChainedAllocated **pLs, void *ptr)
 {
-    ChainedAllocated *successor = ls;
-    ChainedAllocated *current = ls;
-    while (current->ptr != ptr)
-    {
-        successor = current;
-        current = current->previous;
+    ChainedAllocated *current = *pLs;
+    if (current->ptr == ptr){
+        *pLs = current->previous;
+        free(current->ptr);
+        free(current);
+        return;
     }
-
-    free(current->ptr);
-    successor->previous = current->previous;
-    free(current);
+    Free(&current->previous, ptr);
 }
 
 /** Loads the parameters into the system memory
@@ -371,74 +399,34 @@ size_t sizeof_xy_plane(Parameters *p, Fields *fields, double *field)
  * Parameters:
  *  params: The parameters of the simulation
 */
-Fields *initialize_fields(Parameters *params)
+static Fields *initialize_fields(Parameters *params)
 {
     Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
     size_t space_size = params->maxi * (params->maxj + 1) * (params->maxk + 1);
-
-    pFields->Ex = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Ex[space_size] = 0.0;
-    }
+    pFields->Ex = Malloc_Double(&params->ls, space_size);
 
     // Ey
     space_size = (params->maxi + 1) * params->maxj * (params->maxk + 1);
-
-    pFields->Ey = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Ey[space_size] = 0.0;
-    }
+    pFields->Ey = Malloc_Double(&params->ls, space_size);
 
     // Ez
     space_size = (params->maxi + 1) * (params->maxj + 1) * params->maxk;
-
-    pFields->Ez = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Ez[space_size] = 0.0;
-    }
+    pFields->Ez = Malloc_Double(&params->ls, space_size);
 
     // Hx
     space_size = (params->maxi + 1) * params->maxj * params->maxk;
+    pFields->Hx = Malloc_Double(&params->ls, space_size);
 
-    pFields->Hx = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Hx[space_size] = 0.0;
-    }
 
     // Hy
     space_size = params->maxi * (params->maxj + 1) * params->maxk;
-
-    pFields->Hy = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Hy[space_size] = 0.0;
-    }
+    pFields->Hy = Malloc_Double(&params->ls, space_size);
 
     // Hz
     space_size = params->maxi * params->maxj * (params->maxk + 1);
-    pFields->Hz = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Hz[space_size] = 0.0;
-    }
+    pFields->Hz = Malloc_Double(&params->ls, space_size);
 
     return pFields;
 }
@@ -453,68 +441,27 @@ Fields *initialize_cpu_fields(Parameters *params)
 
     // Ex
     size_t space_size = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
-
-    pFields->Ex = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Ex[space_size] = 0.0;
-    }
+    pFields->Ex = Malloc_Double(&params->ls, space_size);
 
     // Ey
     space_size = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
-
-    pFields->Ey = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Ey[space_size] = 0.0;
-    }
+    pFields->Ey = Malloc_Double(&params->ls, space_size);
 
     // Ez
     space_size = (params->maxi + 1) * (params->maxj + 1) * (params->k_layers + 2);
-
-    pFields->Ez = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Ez[space_size] = 0.0;
-    }
+    pFields->Ez = Malloc_Double(&params->ls, space_size);
 
     // Hx
     space_size = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
-
-    pFields->Hx = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Hx[space_size] = 0.0;
-    }
+    pFields->Hx = Malloc_Double(&params->ls, space_size);
 
     // Hy
     space_size = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
-
-    pFields->Hy = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Hy[space_size] = 0.0;
-    }
+    pFields->Hy = Malloc_Double(&params->ls, space_size);
 
     // Hz
     space_size = params->maxi * params->maxj * (params->k_layers + 2);
-    pFields->Hz = Malloc(&params->ls, sizeof(double) * space_size);
-
-    while (0 < space_size)
-    {
-        --space_size;
-        pFields->Hz[space_size] = 0.0;
-    }
+    pFields->Hz = Malloc_Double(&params->ls, space_size);
 
     return pFields;
 }
@@ -572,7 +519,7 @@ void set_initial_conditions(double *Ey, Parameters *p)
     size_t i, j, k;
     for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->k_layers; ++k)
+            for (k = 1; k < p->k_layers+2; ++k)
                 Ey[kEy(p, i, j, k)] = sin(PI * (p->startk + k) * p->spatial_step / p->width) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
@@ -607,10 +554,11 @@ void update_H_field(Parameters *p, Fields *fields)
             for (k = 1; k < p->k_layers + 1; ++k)
                 Hy[kHy(p, i, j, k)] += factor * ((Ez[kEz(p, i + 1, j, k)] - Ez[kEz(p, i, j, k)]) -
                                                  (Ex[kEx(p, i, j, k + 1)] - Ex[kEx(p, i, j, k)]));
-
+    size_t ofst = p->rank == p->ranks-1?2:1;
+    ofst += p->k_layers;
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers + 1; ++k)
+            for (k = 1; k < ofst; ++k)
                 Hz[kHz(p, i, j, k)] += factor * ((Ex[kEx(p, i, j + 1, k)] - Ex[kEx(p, i, j, k)]) -
                                                  (Ey[kEy(p, i + 1, j, k)] - Ey[kEy(p, i, j, k)]));
 }
@@ -634,14 +582,15 @@ void update_E_field(Parameters *p, Fields *fields)
 
     size_t i, j, k;
 
-    for (i = 1; i < p->maxi; ++i)
+    size_t startk = p->rank==0?2:1;
+    for (i = 0; i < p->maxi; ++i)
         for (j = 1; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers + 1; ++k) // why +1?
+            for (k = startk; k < p->k_layers + 1; ++k)
                 Ex[kEx(p, i, j, k)] += factor * ((Hz[kHz(p, i, j, k)] - Hz[kHz(p, i, j - 1, k)]) -
                                                  (Hy[kHy(p, i, j, k)] - Hy[kHy(p, i, j, k - 1)]));
     for (i = 1; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 1; k < p->k_layers + 1; ++k) // why +1?
+            for (k = startk; k < p->k_layers + 1; ++k)
                 Ey[kEy(p, i, j, k)] += factor * ((Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j, k - 1)]) -
                                                  (Hz[kHz(p, i, j, k)] - Hz[kHz(p, i - 1, j, k)]));
 
@@ -969,12 +918,12 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 */
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
-    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ex) * (p->k_layers), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ey) * (p->k_layers), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ez) * (p->k_layers), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hx) * (p->k_layers), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hy) * (p->k_layers), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hz) * (p->k_layers), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ex) * (p->k_layers+1), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ey) * (p->k_layers+1), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ez) * (p->k_layers+1), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hx) * (p->k_layers+1), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hy) * (p->k_layers+1), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hz) * (p->k_layers+1), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
 }
 
 /** MPI: Exhanges E field between ranks
@@ -1070,13 +1019,14 @@ void exchange_H_field(Parameters *p, Fields *f)
  *  pParams:    The parameters of the simulation
  *  pOven: The oven properties
 */
+static
 void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
 {
     double timer;
     double total_energy;
     int iteration = 1;
 
-    Fields *joined_fields;
+    static Fields *joined_fields;
     //printf("rank before: %d \n", pParams->rank);
     if (pParams->rank == 0)
     {
@@ -1121,10 +1071,10 @@ void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pP
         if (pParams->rank == 0 && pParams->mode == VALIDATION_MODE)
         {
             update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, timer);
-            printf("Electrical energy: %0.20f \n", calculate_E_energy(joined_fields, pParams));
-            printf("Magnetic energy: %0.20f \n", calculate_H_energy(joined_fields, pParams));
-            printf("Tot energy: %0.20f \n", calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams));
-            printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+            //printf("Electrical energy: %0.20f \n", calculate_E_energy(joined_fields, pParams));
+            //printf("Magnetic energy: %0.20f \n", calculate_H_energy(joined_fields, pParams));
+            //printf("Tot energy: %0.20f \n", calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams));
+            //printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
             //assert((calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams) - total_energy) <= 0.000001);
         }
     }
@@ -1167,9 +1117,9 @@ int main(int argc, char *argv[])
             pValidationFields = initialize_fields(pParameters);
             printf("Main process: Validation mode activated. \n");
             // Free what's not needed for validation.
-            Free(pParameters->ls,pValidationFields->Ex);
-            Free(pParameters->ls,pValidationFields->Ez);
-            Free(pParameters->ls,pValidationFields->Hy);
+            Free(&(pParameters->ls),pValidationFields->Ex);
+            Free(&(pParameters->ls),pValidationFields->Ez);
+            Free(&(pParameters->ls),pValidationFields->Hy);
         }
         printf("Process %d: Setting initial conditions\n", rank);
         set_initial_conditions(pFields->Ey, pParameters);
@@ -1178,6 +1128,7 @@ int main(int argc, char *argv[])
     printf("Process %d: Launching simulation\n", rank);
     propagate_fields(pFields, pValidationFields, pParameters, pOven);
     printf("Process %d: Freeing memory...\n", rank);
+
     freeAll(pParameters->ls);
 
     if (rank == 0)
