@@ -42,9 +42,9 @@ typedef enum MODE
 
 /** Definition of the scene
  * Properties:
- *    width:            a in figure (y, in paper cs)
- *    height:           b in figure (z, in paper cs)
- *    length:           d in figure (x, in paper cs)
+ *    width:            a=>x in figure (y, in paper cs) 
+ *    height:           b =>y in figure (z, in paper cs)
+ *    length:           d=>d in figure (x, in paper cs)
  *    maxi:             Number of grid subdivisions (x dimension)
  *    maxj:             Number of grid subdivisions (y dimension)
  *    maxk:             Number of grid subdivisions (z dimension)
@@ -685,27 +685,24 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk+1; ++k)
                 vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
-                                        sin(PI * i * p->spatial_step / p->length) *
-                                        sin(PI * k * p->spatial_step / p->height)) -
-                                       pFields->Ey[kEy(p, i, j, k)];
+                                        sin(PI * k * p->spatial_step / p->height) *
+                                        sin(PI * i * p->spatial_step / p->length)) -pFields->Ey[kEy(p, i, j, k)];
 
     for (i = 0; i < p->maxi + 1; ++i)
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk; ++k)
                 vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
                                         sin(2 * PI * f_mnl * time_counter) *
-                                        sin(PI * i * p->spatial_step / p->length) *
-                                        cos(PI * k * p->spatial_step / p->height)) -
-                                       pFields->Hx[kHx(p, i, j, k)];
+                                        sin(PI * k * p->spatial_step / p->height) *
+                                        cos(PI * i * p->spatial_step / p->length)) -pFields->Hx[kHx(p, i, j, k)];
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
             for (k = 0; k < p->maxk + 1; ++k)
                 vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->length) *
                                         sin(2 * PI * f_mnl * time_counter) *
-                                        cos(PI * i * p->spatial_step / p->length) *
-                                        sin(PI * k * p->spatial_step / p->height)) -
-                                       pFields->Hz[kHz(p, i, j, k)];
+                                        cos(PI * k * p->spatial_step / p->height) *
+                                        sin(PI * i * p->spatial_step / p->length)) -pFields->Hz[kHz(p, i, j, k)];
 }
 
 void set_source(Parameters *p, Fields *pFields, double time_counter)
