@@ -73,6 +73,18 @@ typedef struct chainedAllocated
     void *ptr;                         // The current allocated object
 } ChainedAllocated;
 
+/// @brief A structure that rassembles all the fields components
+typedef struct fields
+{
+    double *Ex; // The arrays of the x components of the electric field
+    double *Ey; // The arrays of the y components of the electric field
+    double *Ez; // The arrays of the z components of the electric field
+    double *Hx; // The arrays of the x componnents of the magnetic field
+    double *Hy; // The arrays of the y componnents of the magnetic field
+    double *Hz; // The arrays of the z componnents of the magnetic field
+
+} Fields;
+
 /// @brief Parameters of the simulation
 typedef struct parameters
 {
@@ -92,7 +104,7 @@ typedef struct parameters
     int *dims;       // Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
     int *vdims;      // Array of the sizez of each dimension for variables (maxi, maxj, mak)
     double **coords; // Cordinates of each mesh point (grid)
-    double *tmpV;    // A temporary vector of size maxi*maxj*maxk for averaging the FDTD fields.
+    Fields *mean;    // Mean fields
 
     // Parallelization stuff
     int rank;        // The rank of the current process
@@ -104,18 +116,6 @@ typedef struct parameters
 
     ChainedAllocated *ls; // The chained list of allocated objects by this process
 } Parameters;
-
-/// @brief A structure that rassembles all the fields components
-typedef struct fields
-{
-    double *Ex; // The arrays of the x components of the electric field
-    double *Ey; // The arrays of the y components of the electric field
-    double *Ez; // The arrays of the z components of the electric field
-    double *Hx; // The arrays of the x componnents of the magnetic field
-    double *Hy; // The arrays of the y componnents of the magnetic field
-    double *Hz; // The arrays of the z componnents of the magnetic field
-
-} Fields;
 
 //--------------------------------------------------------------------------------------------------
 //------------------------------------------------------------------------ Function's Specifications
@@ -306,7 +306,6 @@ void *compute_oven(Parameters *params)
     params->vdims[0] = params->maxi;
     params->vdims[1] = params->maxj;
     params->vdims[2] = params->maxk;
-    params->tmpV = Malloc(&params->ls, sizeof(double) * params->maxi * params->maxj * params->maxk);
 
     double *x = Malloc(&params->ls, (params->maxi + 1) * sizeof(double));
     double *y = Malloc(&params->ls, (params->maxj + 1) * sizeof(double));
@@ -357,6 +356,7 @@ size_t sizeof_XY(Parameters *p, Fields *fields, double *field)
 /**
  * @brief Allocates and initialize to 0.0 all the components of each field
  * @param params The parameters of the simulation
+ * @return A pointer to the allocated Field struct and all its fields
 */
 static Fields *initialize_fields(Parameters *params)
 {
@@ -387,6 +387,26 @@ static Fields *initialize_fields(Parameters *params)
     pFields->Hz = Malloc_Double(&params->ls, len);
 
     return pFields;
+}
+
+/**
+ * @brief Allocates and initialize to 0.0 all the components of each field for mean/validation.
+ * @param params The parameters of the simulation
+ * @return A pointer to the allocated Field struct and all its fields
+*/
+static Fields *initialize_mean_fields(Parameters *params)
+{
+    Fields *f = Malloc(&params->ls, sizeof(Fields));
+
+    size_t len = params->maxi * params->maxj * params->maxk + 1;
+    f->Ex = Malloc_Double(&params->ls, len);
+    f->Ey = Malloc_Double(&params->ls, len);
+    f->Ez = Malloc_Double(&params->ls, len);
+    f->Hx = Malloc_Double(&params->ls, len);
+    f->Hy = Malloc_Double(&params->ls, len);
+    f->Hz = Malloc_Double(&params->ls, len);
+
+    return f;
 }
 
 /**
@@ -635,14 +655,29 @@ void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t 
 }
 
 /**
+ * @brief Compute the mean of FDTD simulated fields into the mesh space
+ * 
+ * @param p Parameters of the simulation
+ * @param f Simulated fields
+ */
+void mean_fields(Parameters *p, Fields *f)
+{
+    aggregate_E_field(p, f->Ex, p->mean->Ex, 0, 1, 1);
+    aggregate_E_field(p, f->Ey, p->mean->Ey, 1, 0, 1);
+    aggregate_E_field(p, f->Ez, p->mean->Ez, 1, 1, 0);
+    aggregate_H_field(p, f->Hx, p->mean->Hx, 1, 0, 0);
+    aggregate_H_field(p, f->Hy, p->mean->Hy, 0, 1, 0);
+    aggregate_H_field(p, f->Hz, p->mean->Hz, 0, 0, 1);
+}
+
+/**
  * @brief Writes a silo file of the simulation in the given timestamp
- * @param pFields           The fields
  * @param pValidationFields The validation fields
  * @param pParams           The parameters of the simulation
- * @param pOven             The oven computed
  * @param iteration         The iteration count
+ * @pre   pParams->mean contains the aggregated fields
 */
-void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams, int iteration)
+void write_silo(Fields *pValidationFields, Parameters *pParams, int iteration)
 {
     char filename[100];
     sprintf(filename, DB_FILENAME, iteration);
@@ -653,32 +688,18 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
 
     DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pParams->coords, pParams->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
 
-    aggregate_E_field(pParams, pFields->Ex, pParams->tmpV, 0, 1, 1);
-    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-
-    aggregate_E_field(pParams, pFields->Ey, pParams->tmpV, 1, 0, 1);
-    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-
-    aggregate_E_field(pParams, pFields->Ez, pParams->tmpV, 1, 1, 0);
-    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-
-    aggregate_H_field(pParams, pFields->Hx, pParams->tmpV, 1, 0, 0);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-
-    aggregate_H_field(pParams, pFields->Hy, pParams->tmpV, 0, 1, 0);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-
-    aggregate_H_field(pParams, pFields->Hz, pParams->tmpV, 0, 0, 1);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pParams->mean->Ex, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pParams->mean->Ey, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pParams->mean->Ez, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pParams->mean->Hx, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pParams->mean->Hy, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pParams->mean->Hz, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     if (pParams->mode == VALIDATION_MODE)
     {
-        aggregate_E_field(pParams, pValidationFields->Ey, pParams->tmpV, 1, 0, 1);
-        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        aggregate_H_field(pParams, pFields->Hx, pParams->tmpV, 1, 0, 0);
-        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        aggregate_H_field(pParams, pFields->Hz, pParams->tmpV, 0, 0, 1);
-        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
     }
 
     const char *names[] = {"E", "H"};
@@ -692,20 +713,18 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
 
 /** 
  * @brief Computes the total electrical energy in the system
- * @param pFields   The simulated fields
- * @param p         The parameters of the simulation
+ * @param p The parameters of the simulation that contains the mean of sim. fields
 */
-double calculate_E_energy(Fields *pFields, Parameters *p)
+double calculate_E_energy(Parameters *p)
 {
-    double *Ex = pFields->Ex;
-    double *Ey = pFields->Ey;
-    double *Ez = pFields->Ez;
+    double *Ex = p->mean->Ex;
+    double *Ey = p->mean->Ey;
+    double *Ez = p->mean->Ez;
 
     double ex_energy = 0.0;
     double ey_energy = 0.0;
     double ez_energy = 0.0;
 
-    double mean_ex, mean_ey, mean_ez;
     double dv = pow(p->spatial_step, 3); // volume element
 
     size_t i, j, k;
@@ -714,14 +733,9 @@ double calculate_E_energy(Fields *pFields, Parameters *p)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                mean_ex = (Ex[kEx(p, i, j, k)] + Ex[kEx(p, i, j, k + 1)] + Ex[kEx(p, i, j + 1, k)] + Ex[kEx(p, i, j + 1, k + 1)]) / 4.;
-                ex_energy += pow(mean_ex, 2) * dv;
-
-                mean_ey = (Ey[kEy(p, i, j, k)] + Ey[kEy(p, i + 1, j, k)] + Ey[kEy(p, i, j, k + 1)] + Ey[kEy(p, i + 1, j, k + 1)]) / 4.;
-                ey_energy += pow(mean_ey, 2) * dv;
-
-                mean_ez = (Ez[kHz(p, i, j, k)] + Ez[kHz(p, i, j + 1, k)] + Ez[kHz(p, i + 1, j, k)] + Ez[kHz(p, i + 1, j + 1, k)]) / 4.;
-                ez_energy += pow(mean_ez, 2) * dv;
+                ex_energy += pow(Ex[idx(p, i, j, k, 0, 0)], 2) * dv;
+                ey_energy += pow(Ey[idx(p, i, j, k, 0, 0)], 2) * dv;
+                ez_energy += pow(Ez[idx(p, i, j, k, 0, 0)], 2) * dv;
             }
 
     double E_energy = (ex_energy + ey_energy + ez_energy) * EPSILON / 2.;
@@ -731,20 +745,18 @@ double calculate_E_energy(Fields *pFields, Parameters *p)
 
 /**
  * @brief Computes the H total energy
- * @param pFields The simulated fields
- * @param p       The parameters of the simulation
+ * @param p The parameters of the simulation that contains the mean of sim. fields
 */
-double calculate_H_energy(Fields *pFields, Parameters *p)
+double calculate_H_energy(Parameters *p)
 {
-    double *Hx = pFields->Hx;
-    double *Hy = pFields->Hy;
-    double *Hz = pFields->Hz;
+    double *Hx = p->mean->Hx;
+    double *Hy = p->mean->Hy;
+    double *Hz = p->mean->Hz;
 
     double hx_energy = 0.0;
     double hy_energy = 0.0;
     double hz_energy = 0.0;
 
-    double mean_hx, mean_hy, mean_hz;
     double dv = pow(p->spatial_step, 3); // volume element
 
     size_t i, j, k;
@@ -753,14 +765,9 @@ double calculate_H_energy(Fields *pFields, Parameters *p)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                mean_hx = (Hx[kHx(p, i, j, k)] + Hx[kHx(p, i + 1, j, k)]) / 2.;
-                hx_energy += pow(mean_hx, 2) * dv;
-
-                mean_hy = (Hy[kHy(p, i, j, k)] + Hy[kHy(p, i, j + 1, k)]) / 2.;
-                hy_energy += pow(mean_hy, 2) * dv;
-
-                mean_hz = (Hz[kHz(p, i, j, k)] + Hz[kHz(p, i, j, k + 1)]) / 2.;
-                hz_energy += pow(mean_hz, 2) * dv;
+                hx_energy += pow(Hx[idx(p, i, j, k, 0, 0)], 2) * dv;
+                hy_energy += pow(Hy[idx(p, i, j, k, 0, 0)], 2) * dv;
+                hz_energy += pow(Hz[idx(p, i, j, k, 0, 0)], 2) * dv;
             }
 
     double H_energy = (hx_energy + hy_energy + hz_energy) * MU / 2.;
@@ -770,12 +777,11 @@ double calculate_H_energy(Fields *pFields, Parameters *p)
 
 /**
  * @brief Updates the validation fields and substract the simulated fields to see the difference easier
- * @param p  The parameters of the simulation
- * @param pFields The simulated fields
+ * @param p  The parameters of the simulation that contains the mean of sim. fields
  * @param pValidationFields The containers for the validation fields
  * @param timer The time of the simulation (in seconds)
 */
-void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double time_counter)
+void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFields, double time_counter)
 {
     double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->height, 2) + pow(PI / p->length, 2)) / PI;
     //printf("fmnl: %0.20f \n", f_mnl);
@@ -790,31 +796,27 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
     double *vHz = pValidationFields->Hz;
 
     size_t i, j, k;
-    for (i = 0; i < p->maxi + 1; ++i)
-        for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk + 1; ++k)
-                vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
-                                        sin(PI * i * p->spatial_step / p->length) *
-                                        sin(PI * k * p->spatial_step / p->height)) -
-                                       pFields->Ey[kEy(p, i, j, k)];
-
-    for (i = 0; i < p->maxi + 1; ++i)
-        for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk; ++k)
-                vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
-                                        sin(2 * PI * f_mnl * time_counter) *
-                                        sin(PI * i * p->spatial_step / p->length) *
-                                        cos(PI * k * p->spatial_step / p->height)) -
-                                       pFields->Hx[kHx(p, i, j, k)];
-
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
-            for (k = 0; k < p->maxk + 1; ++k)
-                vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->length) *
-                                        sin(2 * PI * f_mnl * time_counter) *
-                                        cos(PI * i * p->spatial_step / p->length) *
-                                        sin(PI * k * p->spatial_step / p->height)) -
-                                       pFields->Hz[kHz(p, i, j, k)];
+            for (k = 0; k < p->maxk; ++k)
+            {
+                vEy[idx(p, i, j, k, 0, 0)] = (cos(2 * PI * f_mnl * time_counter) *
+                                              sin(PI * i * p->spatial_step / p->length) *
+                                              sin(PI * k * p->spatial_step / p->height)) -
+                                             p->mean->Ey[idx(p, i, j, k, 0, 0)];
+
+                vHx[idx(p, i, j, k, 0, 0)] = ((1.0 / Z_te) *
+                                              sin(2 * PI * f_mnl * time_counter) *
+                                              sin(PI * i * p->spatial_step / p->length) *
+                                              cos(PI * k * p->spatial_step / p->height)) -
+                                             p->mean->Hx[idx(p, i, j, k, 0, 0)];
+
+                vHz[idx(p, i, j, k, 0, 0)] = (-PI / (omega * MU * p->length) *
+                                              sin(2 * PI * f_mnl * time_counter) *
+                                              cos(PI * i * p->spatial_step / p->length) *
+                                              sin(PI * k * p->spatial_step / p->height)) -
+                                             p->mean->Hz[idx(p, i, j, k, 0, 0)];
+            }
 }
 
 /** 
@@ -982,34 +984,31 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
     double timer;
     double total_energy;
     int iteration = 1;
-
     static Fields *joined_fields;
-    //printf("rank before: %d \n", pParams->rank);
+
+    // Initial states and first dump
     if (pParams->rank == 0)
     {
-        //printf("rank: %d \n", pParams->rank);
         joined_fields = initialize_fields(pParams);
         join_fields(joined_fields, pParams, pFields);
-        total_energy = calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams);
+        mean_fields(pParams, joined_fields);
+        total_energy = calculate_E_energy(pParams) + calculate_H_energy(pParams);
 
         if (pParams->mode == VALIDATION_MODE)
-            update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, 0.0);
+            update_validation_fields_then_subfdtd(pParams, pValidationFields, 0.0);
+
+        write_silo(pValidationFields, pParams, 1);
     }
     else
-    {
-        //printf("else: rank: %d \n", pParams->rank);
         send_fields_to_main(pFields, pParams);
-    }
 
+    // Propagation and dumps
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
-        if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
-            write_silo(joined_fields, pValidationFields, pParams, iteration);
+        exchange_E_field(pParams, pFields);
 
         if (pParams->mode == COMPUTATION_MODE && pParams->rank == 0)
             set_source(pParams, pFields, timer);
-
-        exchange_E_field(pParams, pFields);
 
         update_H_field(pParams, pFields);
 
@@ -1025,14 +1024,20 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
         else
             send_fields_to_main(pFields, pParams);
 
-        if (pParams->rank == 0 && pParams->mode == VALIDATION_MODE)
+        if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
         {
-            update_validation_fields_then_subfdtd(pParams, joined_fields, pValidationFields, timer);
-            //printf("Electrical energy: %0.20f \n", calculate_E_energy(joined_fields, pParams));
-            //printf("Magnetic energy: %0.20f \n", calculate_H_energy(joined_fields, pParams));
-            //printf("Tot energy: %0.20f \n", calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams));
-            //printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
-            //assert((calculate_E_energy(joined_fields, pParams) + calculate_H_energy(joined_fields, pParams) - total_energy) <= 0.000001);
+            mean_fields(pParams, joined_fields);
+            if (pParams->mode == VALIDATION_MODE)
+            {
+                update_validation_fields_then_subfdtd(pParams, pValidationFields, timer);
+                //printf("Electrical energy: %0.20f \n", calculate_E_energy(pParams));
+                //printf("Magnetic energy: %0.20f \n", calculate_H_energy(pParams));
+                //printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
+                //printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+                //assert((calculate_E_energy(pParams) + calculate_H_energy(pParams) - total_energy) <= 0.000001);
+            }
+
+            write_silo(pValidationFields, pParams, iteration);
         }
     }
 }
@@ -1058,8 +1063,12 @@ int main(int argc, char *argv[])
     if (pParameters->time_step > pParameters->simulation_time)
         fail(pParameters->ls, "The time step must be lower than the simulation time!");
 
-    printf("Process %d: Creating mesh\n", rank);
-    compute_oven(pParameters);
+    if (rank == 0)
+    {
+        printf("Main process: Creating mesh\n");
+        pParameters->mean = initialize_mean_fields(pParameters);
+        compute_oven(pParameters);
+    }
 
     printf("Process %d: Initializing fields\n", rank);
     Fields *pFields = initialize_cpu_fields(pParameters);
@@ -1069,7 +1078,7 @@ int main(int argc, char *argv[])
     {
         if (rank == 0)
         {
-            pValidationFields = initialize_fields(pParameters);
+            pValidationFields = initialize_mean_fields(pParameters);
             printf("Main process: Validation mode activated. \n");
             // Free what's not needed for validation.
             Free(&(pParameters->ls), pValidationFields->Ex);
