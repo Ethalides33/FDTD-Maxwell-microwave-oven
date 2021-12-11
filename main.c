@@ -816,7 +816,8 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
                 vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
                                         sin(2 * PI * f_mnl * time_counter) *
                                         sin(PI * i * p->spatial_step / p->length) *
-                                        cos(PI * k * p->spatial_step / p->height));
+                                        cos(PI * k * p->spatial_step / p->height)) - 
+                                        pFields->Hx[kHx(p,i,j,k)];
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
