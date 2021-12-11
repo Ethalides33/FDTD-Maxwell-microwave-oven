@@ -733,11 +733,14 @@ double calculate_E_energy(Parameters *p)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                ex_energy += pow(Ex[idx(p, i, j, k, 0, 0)], 2) * dv;
-                ey_energy += pow(Ey[idx(p, i, j, k, 0, 0)], 2) * dv;
-                ez_energy += pow(Ez[idx(p, i, j, k, 0, 0)], 2) * dv;
+                ex_energy += pow(Ex[idx(p, i, j, k, 0, 0)], 2);
+                ey_energy += pow(Ey[idx(p, i, j, k, 0, 0)], 2);
+                ez_energy += pow(Ez[idx(p, i, j, k, 0, 0)], 2);
             }
 
+    ex_energy *= dv;
+    ey_energy *= dv;
+    ez_energy *= dv;
     double E_energy = (ex_energy + ey_energy + ez_energy) * EPSILON / 2.;
 
     return E_energy;
@@ -765,11 +768,14 @@ double calculate_H_energy(Parameters *p)
         for (j = 0; j < p->maxj; j++)
             for (k = 0; k < p->maxk; k++)
             {
-                hx_energy += pow(Hx[idx(p, i, j, k, 0, 0)], 2) * dv;
-                hy_energy += pow(Hy[idx(p, i, j, k, 0, 0)], 2) * dv;
-                hz_energy += pow(Hz[idx(p, i, j, k, 0, 0)], 2) * dv;
+                hx_energy += pow(Hx[idx(p, i, j, k, 0, 0)], 2);
+                hy_energy += pow(Hy[idx(p, i, j, k, 0, 0)], 2);
+                hz_energy += pow(Hz[idx(p, i, j, k, 0, 0)], 2);
             }
 
+    hx_energy *= dv;
+    hy_energy *= dv;
+    hz_energy *= dv;
     double H_energy = (hx_energy + hy_energy + hz_energy) * MU / 2.;
 
     return H_energy;
