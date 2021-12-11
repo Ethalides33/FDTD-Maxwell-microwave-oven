@@ -7,7 +7,8 @@
  * Professors: Geuzaine Christophe; Hiard Samuel, Leduc Guy
  * Description:
  *    This program simulates the propagation of an electromagnetic
-      wave in a microwave oven using the FDTD scheme.
+ *    wave in a microwave oven using the FDTD scheme. The parallel
+ *    branch is for parallel execution of the simulation.
 */
 #include <stdio.h>
 #include <stdlib.h>
@@ -18,160 +19,115 @@
 #include <mpi.h>
 #include <omp.h>
 
+// --- Silo constants
 #define DB_FILENAME "r/result%04d.silo"
 #define DB_MESHNAME "mesh"
 
+// --- Mathematical/Physical constants, precise enough for double computation
 #define MU 1.25663706143591729538505735331180115367886775975E-6
 #define EPSILON 8.854E-12
 #define PI 3.14159265358979323846264338327950288419716939937510582097494
 #define CELERITY 299792458.0
 
+// --- Execution modes for this program
+// VALIDATION:  There is no source but an initial condition given by the equation in the statement
+#define VALIDATION_MODE 0
+
+// COMPUTATION: The source is set and continuously radiates the simulation box
+#define COMPUTATION_MODE 1
+
+//--------------------------------------------------------------------------------------------------
+//--------------------------------------------------------------- Data Structures & Type definitions
+//--------------------------------------------------------------------------------------------------
+/// @brief TAGS used for diverse OpenMPI communications
+static const enum TAGS { EX_TAG_TO_UP = 0,
+                         EY_TAG_TO_UP,
+                         EZ_TAG_TO_UP,
+                         HX_TAG_TO_UP,
+                         HY_TAG_TO_UP,
+                         HZ_TAG_TO_UP,
+                         EX_TAG_TO_DOWN,
+                         EY_TAG_TO_DOWN,
+                         EZ_TAG_TO_DOWN,
+                         HX_TAG_TO_DOWN,
+                         HY_TAG_TO_DOWN,
+                         HZ_TAG_TO_DOWN,
+
+                         EX_TAG_TO_MAIN,
+                         EY_TAG_TO_MAIN,
+                         EZ_TAG_TO_MAIN,
+                         HX_TAG_TO_MAIN,
+                         HY_TAG_TO_MAIN,
+                         HZ_TAG_TO_MAIN,
+} tags;
+
 /**
-------------------------------------------------------
-------------------- Data Structures & Type definitions
-------------------------------------------------------
-*/
-/** Execution modes for this program.
- * VALIDATION_MODE: There is no source but an initial condition given by the equantion in the statement
- * COMOPUTATION_MODE: The source is set and continuously radiates the simulation box
-*/
-typedef enum MODE
-{
-    VALIDATION_MODE = 0,
-    COMPUTATION_MODE = 1
-} MODE;
-
-/** TAGS used for diverse OpenMPI communications */
-typedef enum TAGS
-{
-    EX_TAG_TO_UP = 0,
-    EY_TAG_TO_UP,
-    EZ_TAG_TO_UP,
-    HX_TAG_TO_UP,
-    HY_TAG_TO_UP,
-    HZ_TAG_TO_UP,
-    EX_TAG_TO_DOWN,
-    EY_TAG_TO_DOWN,
-    EZ_TAG_TO_DOWN,
-    HX_TAG_TO_DOWN,
-    HY_TAG_TO_DOWN,
-    HZ_TAG_TO_DOWN,
-
-    EX_TAG_TO_MAIN,
-    EY_TAG_TO_MAIN,
-    EZ_TAG_TO_MAIN,
-    HX_TAG_TO_MAIN,
-    HY_TAG_TO_MAIN,
-    HZ_TAG_TO_MAIN,
-} TAGS;
-
-/** An approach to manage memory allocations in a chained list
- * Properties:
- *      previous:   The previous allocated object
- *      ptr:        The current allocated object
- * Description:
- *      This structure allow us to store each allocated object
- *      into a chained list with a LiFo strategy so when we
- *      free up all memory we take care of the inner most objects
+ * @brief  An approach to manage memory allocations in a chained list
+ * @note    This structure allow us to store each allocated object
+ *          into a chained list with a LiFo strategy so when we
+ *          free up all memory we take care of the inner most objects
 */
 typedef struct chainedAllocated
 {
-    struct chainedAllocated *previous;
-    void *ptr;
+    struct chainedAllocated *previous; // The previous node of the chained list
+    void *ptr;                         // The current allocated object
 } ChainedAllocated;
 
-/** Definition of the scene
- * Properties:
- *    width:            a in figure (y, in paper cs)
- *    height:           b in figure (z, in paper cs)
- *    length:           d in figure (x, in paper cs)
- *    maxi:             Number of grid subdivisions (x dimension)
- *    maxj:             Number of grid subdivisions (y dimension)
- *    maxk:             Number of grid subdivisions (z dimension)
- *    spatial_step:     delta x = delta y = delta z
- *    time_step:        delta t
- *    simulation_time:  interval of time simulated (in seconds)
- *    sampling_rate:    rate at which data is printed to file (in #steps)
- *    mode:             0 for validation mode, 1 for computation
- * 
- *    rank:             The rank of the current CPU (MPI)
- *    ranks:            The number of ranks, aka. world_size (MPI)
- *    k_layers:         The number of layers on the (X,Y) plane treaten by current CPU
- *    lower_cpu:        The rank of the CPU working on the plane below (Z-1)
- *    upper_cpu:        The rank of the CPU working on the plane above (Z+1)
- *    ls:               The chained list of allocated objects
-*/
+/// @brief Parameters of the simulation
 typedef struct parameters
 {
-    float width;
-    float height;
-    float length;
-    size_t maxi;
-    size_t maxj;
-    size_t maxk;
-    double spatial_step;
-    double time_step;
-    float simulation_time;
-    unsigned int sampling_rate;
-    MODE mode;
+    float width;                // a in figure (y, in paper cs)
+    float height;               // b in figure (z, in paper cs)
+    float length;               // d in figure (x, in paper cs)
+    size_t maxi;                // Number of grid subdivisions (x dimension)
+    size_t maxj;                // Number of grid subdivisions (y dimension)
+    size_t maxk;                // Number of grid subdivisions (z dimension)
+    double spatial_step;        // delta x = delta y = delta z
+    double time_step;           // delta t
+    float simulation_time;      // interval of time simulated (in seconds)
+    unsigned int sampling_rate; // rate at which data is printed to file (in #steps)
+    int mode;                   // 0 for validation mode, 1 for computation
 
-    // Parallelization
-    int rank;
-    int ranks;
-    size_t startk;
-    size_t k_layers;
-    int lower_cpu;
-    int upper_cpu;
+    // Mesh directly derived from parameters above and useless to recompute at each timestep
+    int *dims;       // Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
+    int *vdims;      // Array of the sizez of each dimension for variables (maxi, maxj, mak)
+    double **coords; // Cordinates of each mesh point (grid)
+    double *tmpV;    // A temporary vector of size maxi*maxj*maxk for averaging the FDTD fields.
 
-    ChainedAllocated *ls;
+    // Parallelization stuff
+    int rank;        // The rank of the current process
+    int ranks;       // The number of ranks, aka. MPI_Comm_size
+    size_t startk;   // The index of the first rank treaten by the current rank
+    size_t k_layers; // The number of layers on the (X,Y) plane treaten by current rank
+    int lower_cpu;   // The rank of the process working on the plane below (Z-1)
+    int upper_cpu;   // The rank of the CPU working on the plane above (Z+1)
+
+    ChainedAllocated *ls; // The chained list of allocated objects by this process
 } Parameters;
 
-/** Definition of the oven mesh (can be derived directly from Parameters), it's useless to recompute it at each timestep
- * Properties:
- *  dims:    Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
- *  vdims:   Array of the sizez of each dimension for variables (maxi, maxj, mak)
- *  coords:  Cordinates of each mesh point (grid)
- *  tmpV:    A temporary vector of size maxi*maxj*maxk for averaging the fields before writting silo file.
-*/
-typedef struct oven
-{
-    int *dims;
-    int *vdims;
-    double **coords;
-    double *tmpV;
-} Oven;
-
-/** A structure that rassembles all the fields components
- * Properties:
- *      Ex/y/z     The arrays of the x/y/z components of the electric field
- *      Hx/y/z     The arrays of the x/y/z componnents of the magnetic field
- */
+/// @brief A structure that rassembles all the fields components
 typedef struct fields
 {
-
-    double *Ex;
-    double *Ey;
-    double *Ez;
-    double *Hx;
-    double *Hy;
-    double *Hz;
+    double *Ex; // The arrays of the x components of the electric field
+    double *Ey; // The arrays of the y components of the electric field
+    double *Ez; // The arrays of the z components of the electric field
+    double *Hx; // The arrays of the x componnents of the magnetic field
+    double *Hy; // The arrays of the y componnents of the magnetic field
+    double *Hz; // The arrays of the z componnents of the magnetic field
 
 } Fields;
 
+//--------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------ Function's Specifications
+//--------------------------------------------------------------------- Signatures & Implementations
+//--------------------------------------------------------------------------------------------------
 /**
-------------------------------------------------------
----------------------------- Function's Specifications
-------------------------- Signatures & Implementations
-------------------------------------------------------
-*/
-/** Free any allocated object with the Malloc function (see below)
- * Parameters:
- *  ls: The list of allocated objects
- * Description:
- *  This function free's the memory allocated for all
- *  the objects allocated with the next Malloc function
- *  in the reverse way of their allocation (LiFo) in order
- *  to deal with nested structures.
+ * @brief Free any allocated object with the Malloc function (see below)
+ * @param ls The list of allocated objects
+ * @note This function free's the memory allocated for all
+ *       the objects allocated with the next Malloc function
+ *       in the reverse way of their allocation (LiFo) in order
+ *       to deal with nested structures.
 */
 void *freeAll(ChainedAllocated *ls)
 {
@@ -185,10 +141,10 @@ void *freeAll(ChainedAllocated *ls)
     free(ls);
 }
 
-/** Free the memory and throws an error, then exits with EXIT_FAILURE.
- * Parameters:
- *  ls:     The chained list of allocated objects
- *  msg:    The message to throw before exit
+/**
+ * @brief Free the memory and throws an error, then exits with EXIT_FAILURE.
+ * @param ls   The chained list of allocated objects
+ * @param msg  The message to throw before exit
 */
 void fail(ChainedAllocated *ls, const char *msg)
 {
@@ -198,31 +154,32 @@ void fail(ChainedAllocated *ls, const char *msg)
     exit(EXIT_FAILURE);
 }
 
-/** Critical allocation (malloc or fail)
- * Parameters:
- *  pLs:    A pointer to the pointer of the list of allocated objects.
- * Description:
- *  In addition to critically check if the malloc properly worked,
- *  this function stores the reference to the new allocated object
- *  in the superglobal chained list which is then used to free the
- *  memory before exit.
+/**
+ * @brief Critical allocation (malloc or fail)
+ * @param pLs A pointer to the pointer of the list of allocated objects.
+ * @note In addition to critically check if the malloc properly worked,
+ *       this function stores the reference to the new allocated object
+ *       in the superglobal chained list which is then used to free the
+ *       memory before exit.
 */
 void *Malloc(ChainedAllocated **pLs, size_t size)
 {
+    // Very first allocation: The first ptr references the node itself
     ChainedAllocated *ls = *pLs;
     if (ls == NULL)
     {
         ls = malloc(sizeof(ChainedAllocated));
         ls->ptr = ls;
         ls->previous = NULL;
-        *pLs = ls;
     }
 
+    // Creates next node and points pLs to it
     ChainedAllocated *successor = malloc(sizeof(ChainedAllocated));
     successor->previous = ls;
     ls = successor;
     *pLs = ls;
 
+    // Allocate the demanded size or fail
     void *ptr = malloc(size);
 
     ls->ptr = ptr;
@@ -234,44 +191,40 @@ void *Malloc(ChainedAllocated **pLs, size_t size)
 }
 
 /**
- * @brief Utility to allocate array of doubles and initialize it to 0.0
- * @param pLs The pointer to a pointer of the list of allocated pointers
+ * @brief Utility to critically allocate array of doubles and initialize all fields to 0.0
+ * @param pLs The pointer to a pointer of the list of allocated objects.
  * @param len The length of the array 
- */
+*/
 double *Malloc_Double(ChainedAllocated **pLs, size_t len)
 {
     double *ptr = Malloc(pLs, sizeof(double) * len);
-    while (0 < len)
-    {
-        --len;
+    for (--len; 0 < len; --len)
         ptr[len] = 0.0;
-    }
     return ptr;
 }
 
 /**
- * @brief Utility to print the chained list of pointers
- * 
+ * @brief Debug utility to print the chained list of pointers in heap
  * @param ls The pointer to the chained list of poinetrs
- */
+ * @note It's better to never need that!
+*/
 static void printHeap(ChainedAllocated *ls)
 {
     printf("==== Heap addresses dump ==== \n");
-    while (ls)
-    {
+    for (; ls; ls = ls->previous)
         printf("Current: %p || ptr: %p || Previous: %p\n", ls, ls->ptr, ls->previous);
-        ls = ls->previous;
-    }
-    printf("==== Heap addresses dump END ==== \n");
+    printf("==== Heap addresses dump END ==== \n\n");
 }
 
-/** For an object allocated with the Malloc function above, frees the memory and removes the entry from the chained list.
- * Parameters:
- *  ls:    A pointer to the list containing the allocated objects
- *  ptr:    The pointer to free
+/**
+ * @brief Frees the memory and removes the entry from the chained list.
+ * @pre ptr was allocated with the @ref Malloc function above.
+ * @param ls   A pointer to the list containing the allocated objects
+ * @param ptr  The pointer to the object to free
 */
 void Free(ChainedAllocated **pLs, void *ptr)
 {
+    // If the pointer is here, free it
     ChainedAllocated *current = *pLs;
     if (current->ptr == ptr)
     {
@@ -280,14 +233,25 @@ void Free(ChainedAllocated **pLs, void *ptr)
         free(current);
         return;
     }
+
+    // Ensure termination, if you get this error, maybe you didn't allocate the object
+    // with the Malloc function provided above, or you lost the initial pointer of
+    // the very first node. You can use printHeap to debug it before calling Free.
+    if (current->previous == NULL)
+    {
+        fprintf(stderr, "Trying to Free ptr %p which is not found in heap list\n", ptr);
+        return;
+    }
+
+    // Otherwise, recurse beginning from the previous node
     Free(&current->previous, ptr);
 }
 
-/** Loads the parameters into the system memory
- * Parameters:
- *    filename: The file containing the parameters properties (.txt)
- * Return:
- *    A pointer to the parameters structure loaded in system memory
+/**
+ * @brief Loads the parameters into the system memory.
+ * @param filename The file containing the parameters properties (.txt)
+ * @return A pointer to the Parameters struct loaded in system memory
+ * @note In parallel mode, this also sets the state of the process.
 */
 Parameters *load_parameters(const char *filename)
 {
@@ -327,32 +291,27 @@ Parameters *load_parameters(const char *filename)
     return pParameters;
 }
 
-/** Compute the oven properties and returns it
- * Parameters:
- *  params: The parameters of the simulation
- * Returns:
- *  A pointer to the oven structure
+/** 
+ * @brief Compute the oven properties and persist it into params
+ * @param params The parameters of the simulation
 */
-Oven *compute_oven(Parameters *params)
+void *compute_oven(Parameters *params)
 {
-    Oven *r = Malloc(&params->ls, sizeof(Oven));
-
-    r->dims = Malloc(&params->ls, sizeof(size_t) * 3);
-    r->vdims = Malloc(&params->ls, sizeof(size_t) * 3);
-    r->coords = Malloc(&params->ls, sizeof(double **) * 3);
-    r->dims[0] = params->maxi + 1;
-    r->dims[1] = params->maxj + 1;
-    r->dims[2] = params->maxk + 1;
-    r->vdims[0] = params->maxi;
-    r->vdims[1] = params->maxj;
-    r->vdims[2] = params->maxk;
-    r->tmpV = Malloc(&params->ls, sizeof(double) * params->maxi * params->maxj * params->maxk);
+    params->dims = Malloc(&params->ls, sizeof(size_t) * 3);
+    params->vdims = Malloc(&params->ls, sizeof(size_t) * 3);
+    params->coords = Malloc(&params->ls, sizeof(double **) * 3);
+    params->dims[0] = params->maxi + 1;
+    params->dims[1] = params->maxj + 1;
+    params->dims[2] = params->maxk + 1;
+    params->vdims[0] = params->maxi;
+    params->vdims[1] = params->maxj;
+    params->vdims[2] = params->maxk;
+    params->tmpV = Malloc(&params->ls, sizeof(double) * params->maxi * params->maxj * params->maxk);
 
     double *x = Malloc(&params->ls, (params->maxi + 1) * sizeof(double));
     double *y = Malloc(&params->ls, (params->maxj + 1) * sizeof(double));
     double *z = Malloc(&params->ls, (params->maxk + 1) * sizeof(double));
 
-    //TODO: Optimization: iterate once to the bigger and affect if in bounds of array...
     double dx = params->spatial_step;
     for (int i = 0; i < params->maxi + 1; ++i)
         x[i] = i * dx;
@@ -366,20 +325,19 @@ Oven *compute_oven(Parameters *params)
     int ndims = 3;
     double *cords[] = {x, y, z};
 
-    r->coords[0] = x;
-    r->coords[1] = y;
-    r->coords[2] = z;
-
-    return r;
+    params->coords[0] = x;
+    params->coords[1] = y;
+    params->coords[2] = z;
 }
 
-/** Gives the size of the simulation XY plane depending on the field/field component
- * Parameters:
- *  p:      The parameters of the simulation
- *  fields: The fields
- *  field:  The field for which you want the size of XY plane
+/**
+ * @brief Gives the size of the simulation XY plane depending on the field component
+ * @param p      The parameters of the simulation
+ * @param fields The fields
+ * @param field  The field for which you want the size of XY plane
+ * @return The size of the XY plane
 **/
-size_t sizeof_xy_plane(Parameters *p, Fields *fields, double *field)
+size_t sizeof_XY(Parameters *p, Fields *fields, double *field)
 {
     if (field == fields->Ex)
         return p->maxi * (p->maxj + 1);
@@ -396,123 +354,158 @@ size_t sizeof_xy_plane(Parameters *p, Fields *fields, double *field)
     return 0;
 }
 
-/** Allocates and initialize to 0.0 all the components of each field at a given time t.
- * Parameters:
- *  params: The parameters of the simulation
+/**
+ * @brief Allocates and initialize to 0.0 all the components of each field
+ * @param params The parameters of the simulation
 */
 static Fields *initialize_fields(Parameters *params)
 {
     Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
-    size_t space_size = params->maxi * (params->maxj + 1) * (params->maxk + 1);
-    pFields->Ex = Malloc_Double(&params->ls, space_size);
+    size_t len = params->maxi * (params->maxj + 1) * (params->maxk + 1);
+    pFields->Ex = Malloc_Double(&params->ls, len);
 
     // Ey
-    space_size = (params->maxi + 1) * params->maxj * (params->maxk + 1);
-    pFields->Ey = Malloc_Double(&params->ls, space_size);
+    len = (params->maxi + 1) * params->maxj * (params->maxk + 1);
+    pFields->Ey = Malloc_Double(&params->ls, len);
 
     // Ez
-    space_size = (params->maxi + 1) * (params->maxj + 1) * params->maxk;
-    pFields->Ez = Malloc_Double(&params->ls, space_size);
+    len = (params->maxi + 1) * (params->maxj + 1) * params->maxk;
+    pFields->Ez = Malloc_Double(&params->ls, len);
 
     // Hx
-    space_size = (params->maxi + 1) * params->maxj * params->maxk;
-    pFields->Hx = Malloc_Double(&params->ls, space_size);
+    len = (params->maxi + 1) * params->maxj * params->maxk;
+    pFields->Hx = Malloc_Double(&params->ls, len);
 
     // Hy
-    space_size = params->maxi * (params->maxj + 1) * params->maxk;
-    pFields->Hy = Malloc_Double(&params->ls, space_size);
+    len = params->maxi * (params->maxj + 1) * params->maxk;
+    pFields->Hy = Malloc_Double(&params->ls, len);
 
     // Hz
-    space_size = params->maxi * params->maxj * (params->maxk + 1);
-    pFields->Hz = Malloc_Double(&params->ls, space_size);
+    len = params->maxi * params->maxj * (params->maxk + 1);
+    pFields->Hz = Malloc_Double(&params->ls, len);
 
     return pFields;
 }
 
-/** Allocates and initialize to 0.0 all the components of each field at a given time t for this cpu
- * Parameters:
- *  params: The parameters of the simulation
+/**
+ * @brief Allocates and initialize to 0.0 all the components of each field for this rank [MPI]
+ * @param params The parameters of the simulation
 */
 Fields *initialize_cpu_fields(Parameters *params)
 {
     Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
-    size_t space_size = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
-    pFields->Ex = Malloc_Double(&params->ls, space_size);
+    size_t len = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
+    pFields->Ex = Malloc_Double(&params->ls, len);
 
     // Ey
-    space_size = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
-    pFields->Ey = Malloc_Double(&params->ls, space_size);
+    len = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
+    pFields->Ey = Malloc_Double(&params->ls, len);
 
     // Ez
-    space_size = (params->maxi + 1) * (params->maxj + 1) * (params->k_layers + 2);
-    pFields->Ez = Malloc_Double(&params->ls, space_size);
+    len = (params->maxi + 1) * (params->maxj + 1) * (params->k_layers + 2);
+    pFields->Ez = Malloc_Double(&params->ls, len);
 
     // Hx
-    space_size = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
-    pFields->Hx = Malloc_Double(&params->ls, space_size);
+    len = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
+    pFields->Hx = Malloc_Double(&params->ls, len);
 
     // Hy
-    space_size = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
-    pFields->Hy = Malloc_Double(&params->ls, space_size);
+    len = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
+    pFields->Hy = Malloc_Double(&params->ls, len);
 
     // Hz
-    space_size = params->maxi * params->maxj * (params->k_layers + 2);
-    pFields->Hz = Malloc_Double(&params->ls, space_size);
+    len = params->maxi * params->maxj * (params->k_layers + 2);
+    pFields->Hz = Malloc_Double(&params->ls, len);
 
     return pFields;
 }
 
-/** Fast shortcut to get the index of a field at i, j and k
- * Parameters:
- *  params: The parameters of the simulation
- *  i, j, k: The coordinates of the wanted field
- *  mi, mj: The additionnal sizes of dimensions X and Y.
- * Returns:
- *  The index in a 1D array
+/**
+ * @brief Fast shortcut to get the index of a field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @param mi_mj  The additionnal sizes of dimensions X and Y.
+ * @return The index in a 1D array
 */
 size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_t mi, size_t mj)
 {
     return i + j * (params->maxi + mi) + k * (params->maxi + mi) * (params->maxj + mj);
 }
 
+/**
+ * @brief Fast shortcut to get the index of Ex field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @return The index in a 1D array
+*/
 size_t kEx(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 0, 1);
 }
 
+/**
+ * @brief Fast shortcut to get the index of Ey field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @return The index in a 1D array
+*/
 size_t kEy(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 1, 0);
 }
 
+/**
+ * @brief Fast shortcut to get the index of Ez field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @return The index in a 1D array
+*/
 size_t kEz(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 1, 1);
 }
 
+/**
+ * @brief Fast shortcut to get the index of Hx field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @return The index in a 1D array
+*/
 size_t kHx(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 1, 0);
 }
 
+/**
+ * @brief Fast shortcut to get the index of Hy field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @return The index in a 1D array
+*/
 size_t kHy(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 0, 1);
 }
 
+/**
+ * @brief Fast shortcut to get the index of Hz field at i, j and k
+ * @param params The parameters of the simulation
+ * @param i_j_k  The coordinates of the wanted field
+ * @return The index in a 1D array
+*/
 size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 0, 0);
 }
 
-/** Sets the initial field as asked in Question 3.a.
- * Parameters:
- *  Ey: The y component of the Energy fields
- *  p:   The parameters of the simulation
+/**
+ * @brief Sets the initial field as stated in Question 3.a.
+ * @param Ey The y component of the Energy fields
+ * @param p  The parameters of the simulation
 */
 void set_initial_conditions(double *Ey, Parameters *p)
 {
@@ -524,10 +517,10 @@ void set_initial_conditions(double *Ey, Parameters *p)
                                       sin(PI * i * p->spatial_step / p->length);
 }
 
-/** Updates the H field
- * Parameters:
- *  p:      The parameters of the simulation
- *  fields: The fields
+/** 
+ * @brief Updates the H field
+ * @param p      The parameters of the simulation
+ * @param fields All the fields
 */
 void update_H_field(Parameters *p, Fields *fields)
 {
@@ -563,10 +556,10 @@ void update_H_field(Parameters *p, Fields *fields)
                                                  (Ey[kEy(p, i + 1, j, k)] - Ey[kEy(p, i, j, k)]));
 }
 
-/** Updates the E field
- * Parameters:
- *  p:      The parameters of the simulation
- *  fields: The fields
+/** 
+ * @brief Updates the E field
+ * @param p      The parameters of the simulation
+ * @param fields All the fields
 */
 void update_E_field(Parameters *p, Fields *fields)
 {
@@ -597,23 +590,18 @@ void update_E_field(Parameters *p, Fields *fields)
     for (i = 1; i < p->maxi; ++i)
         for (j = 1; j < p->maxj; ++j)
             for (k = 1; k < p->k_layers + 1; ++k)
-            {
                 Ez[kEz(p, i, j, k)] += factor * ((Hy[kHy(p, i, j, k)] - Hy[kHy(p, i - 1, j, k)]) -
                                                  (Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j - 1, k)]));
-            } /*             if( k==p->k_layers) //k==p->k_layers ||
-                    Ez[kEz(p, i, j, k)] = 2;
-                if (k==1)
-                    Ez[kEz(p, i, j, k)] = -2;*/
 }
 
-/** Computes the mean of an electrical field 
- * Parameters:
- *  p: The simulation parameters
- *  Ef: The E field component in one direction
- *  r:  The result aggregated vector of size (maxi, maxj, maxk)
- *  ofi: The offset in X (related to the space size)
- *  ofj: The offset in Y (related to the space size)
- *  ofk: The offset in Z (related to the space size)
+/**
+ * @brief Computes the mean of an electrical field for dump to silo
+ * @param p   The simulation parameters
+ * @param Ef  The E field component in one direction
+ * @param r   The result aggregated vector of size (maxi, maxj, maxk)
+ * @param ofi The offset in X (related to the space size)
+ * @param ofj The offset in Y (related to the space size)
+ * @param ofk The offset in Z (related to the space size)
 */
 void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t ofj, size_t ofk)
 {
@@ -627,14 +615,14 @@ void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t 
                                 Ef[idx(p, i + ofi, j, k + ofk, ofi, ofj)]);
 }
 
-/** Computes the mean of an magnetic field 
- * Parameters:
- *  p: The simulation parameters
- *  Hf: The H field component in one direction
- *  r:  The result aggregated vector of size (maxi, maxj, maxk)
- *  ofi: The offset in X (related to the space size)
- *  ofj: The offset in Y (related to the space size)
- *  ofk: The offset in Z (related to the space size)
+/** 
+ * @brief Computes the mean of an magnetic field 
+ * @param p   The simulation parameters
+ * @param Hf  The H field component in one direction
+ * @param r   The result aggregated vector of size (maxi, maxj, maxk)
+ * @param ofi The offset in X (related to the space size)
+ * @param ofj The offset in Y (related to the space size)
+ * @param ofk The offset in Z (related to the space size)
 */
 void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t ofj, size_t ofk)
 {
@@ -646,15 +634,15 @@ void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t 
                                Hf[idx(p, i + ofi, j + ofj, k + ofk, ofi, ofj)]);
 }
 
-/** Writes a silo file of the simulation in the given timestamp
- * Parameters:
- *  pFields: The fields
- *  pValidationFields: The validation fields
- *  pParams: The parameters of the simulation
- *  pOven: The oven computed
- *  iteration: The iteration count
+/**
+ * @brief Writes a silo file of the simulation in the given timestamp
+ * @param pFields           The fields
+ * @param pValidationFields The validation fields
+ * @param pParams           The parameters of the simulation
+ * @param pOven             The oven computed
+ * @param iteration         The iteration count
 */
-void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven, int iteration)
+void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams, int iteration)
 {
     char filename[100];
     sprintf(filename, DB_FILENAME, iteration);
@@ -663,34 +651,34 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     if (!dbfile)
         fail(pParams->ls, "Could not create DB\n");
 
-    DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pOven->coords, pOven->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
+    DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pParams->coords, pParams->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
 
-    aggregate_E_field(pParams, pFields->Ex, pOven->tmpV, 0, 1, 1);
-    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    aggregate_E_field(pParams, pFields->Ex, pParams->tmpV, 0, 1, 1);
+    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
-    aggregate_E_field(pParams, pFields->Ey, pOven->tmpV, 1, 0, 1);
-    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    aggregate_E_field(pParams, pFields->Ey, pParams->tmpV, 1, 0, 1);
+    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
-    aggregate_E_field(pParams, pFields->Ez, pOven->tmpV, 1, 1, 0);
-    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    aggregate_E_field(pParams, pFields->Ez, pParams->tmpV, 1, 1, 0);
+    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
-    aggregate_H_field(pParams, pFields->Hx, pOven->tmpV, 1, 0, 0);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    aggregate_H_field(pParams, pFields->Hx, pParams->tmpV, 1, 0, 0);
+    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
-    aggregate_H_field(pParams, pFields->Hy, pOven->tmpV, 0, 1, 0);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    aggregate_H_field(pParams, pFields->Hy, pParams->tmpV, 0, 1, 0);
+    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
-    aggregate_H_field(pParams, pFields->Hz, pOven->tmpV, 0, 0, 1);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    aggregate_H_field(pParams, pFields->Hz, pParams->tmpV, 0, 0, 1);
+    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     if (pParams->mode == VALIDATION_MODE)
     {
-        aggregate_E_field(pParams, pValidationFields->Ey, pOven->tmpV, 1, 0, 1);
-        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        aggregate_H_field(pParams, pFields->Hx, pOven->tmpV, 1, 0, 0);
-        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        aggregate_H_field(pParams, pFields->Hz, pOven->tmpV, 0, 0, 1);
-        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pOven->tmpV, pOven->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        aggregate_E_field(pParams, pValidationFields->Ey, pParams->tmpV, 1, 0, 1);
+        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        aggregate_H_field(pParams, pFields->Hx, pParams->tmpV, 1, 0, 0);
+        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        aggregate_H_field(pParams, pFields->Hz, pParams->tmpV, 0, 0, 1);
+        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pParams->tmpV, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
     }
 
     const char *names[] = {"E", "H"};
@@ -702,10 +690,10 @@ void write_silo(Fields *pFields, Fields *pValidationFields, Parameters *pParams,
     DBClose(dbfile);
 }
 
-/** Computes the total electrical energy in the system
- * Parameters:
- *  pFields: The simulated fields
- *  p:  The parameters of the simulation
+/** 
+ * @brief Computes the total electrical energy in the system
+ * @param pFields   The simulated fields
+ * @param p         The parameters of the simulation
 */
 double calculate_E_energy(Fields *pFields, Parameters *p)
 {
@@ -741,10 +729,10 @@ double calculate_E_energy(Fields *pFields, Parameters *p)
     return E_energy;
 }
 
-/** Computes the H total energy
- * Parameters:
- *  pFields: The simulated fields
- *  p: The parameters of the simulation
+/**
+ * @brief Computes the H total energy
+ * @param pFields The simulated fields
+ * @param p       The parameters of the simulation
 */
 double calculate_H_energy(Fields *pFields, Parameters *p)
 {
@@ -780,12 +768,12 @@ double calculate_H_energy(Fields *pFields, Parameters *p)
     return H_energy;
 }
 
-/** Updates the validation fields and substract the simulated fields to see the difference easier
- * Parameters:
- *  p:  The parameters of the simulation
- *  pFields: The simulated fields
- *  pValidationFields: The containers for the validation fields
- *  timer: The time of the simulation (in seconds)
+/**
+ * @brief Updates the validation fields and substract the simulated fields to see the difference easier
+ * @param p  The parameters of the simulation
+ * @param pFields The simulated fields
+ * @param pValidationFields The containers for the validation fields
+ * @param timer The time of the simulation (in seconds)
 */
 void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Fields *pValidationFields, double time_counter)
 {
@@ -816,8 +804,8 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
                 vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
                                         sin(2 * PI * f_mnl * time_counter) *
                                         sin(PI * i * p->spatial_step / p->length) *
-                                        cos(PI * k * p->spatial_step / p->height)) - 
-                                        pFields->Hx[kHx(p,i,j,k)];
+                                        cos(PI * k * p->spatial_step / p->height)) -
+                                       pFields->Hx[kHx(p, i, j, k)];
 
     for (i = 0; i < p->maxi; ++i)
         for (j = 0; j < p->maxj; ++j)
@@ -829,11 +817,11 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pFields, Field
                                        pFields->Hz[kHz(p, i, j, k)];
 }
 
-/** Sets the source in computation mode
- * Parameters:
- *  p: The parameters of the simulation
- *  pFields: The fields
- *  timer: The time of the simulation
+/** 
+ * @brief Sets the source in computation mode
+ * @param p The parameters of the simulation
+ * @param pFields The fields
+ * @param timer The time of the simulation
 */
 void set_source(Parameters *p, Fields *pFields, double time_counter)
 {
@@ -877,12 +865,11 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
         }
 }
 
-/** Joins the fields of each MPI process into the joined_field parameter
- * Parameters:
- *  joined_fields: The container for the joined fields
- *  p:             The parameters of the simulation
- * Warning:
- *  This function needs that each process sends its results. Risk of deadlock!
+/** 
+ * @brief Joins the fields of each MPI process into the joined_field parameter
+ * @param joined_fields The container for the joined fields
+ * @param p             The parameters of the simulation
+ * @warning This function needs that each process sends its results. Risk of deadlock!
 */
 void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 {
@@ -890,12 +877,12 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
     for (int i = 1; i < p->ranks; ++i)
     {
         size_t k_offset = i * p->k_layers;
-        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields, join_fields->Ex) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields, join_fields->Ey) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields, join_fields->Ez) * (p->maxk - k_offset), MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields, join_fields->Hx) * (p->maxk - k_offset), MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields, join_fields->Hy) * (p->maxk - k_offset), MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], sizeof_xy_plane(p, join_fields, join_fields->Hz) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ex) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ey) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ez) * (p->maxk - k_offset), MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hx) * (p->maxk - k_offset), MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hy) * (p->maxk - k_offset), MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hz) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     }
 
     for (int i = 0; i < p->maxi + 1; i++)
@@ -920,79 +907,77 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
             }
 }
 
-/** Sends each fields to main thread to be joined
- * Parameters:
- *  pFields: The simulated fields
- *  p: The parameters of the simulation
- * Warning:
- *  This function needs that the main process receives the result. Risk of deadlock!
+/** 
+ * @brief Sends each fields to main thread to be joined
+ * @param pFields The simulated fields
+ * @param p The parameters of the simulation
+ * @warning This function needs that the main process receives the result. Risk of deadlock!
 */
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
-    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ex) * (p->k_layers + 1), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ey) * (p->k_layers + 1), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Ez) * (p->k_layers), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hx) * (p->k_layers), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hy) * (p->k_layers), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, pFields, pFields->Hz) * (p->k_layers + 1), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ex) * (p->k_layers + 1), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ey) * (p->k_layers + 1), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ez) * (p->k_layers), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hx) * (p->k_layers), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hy) * (p->k_layers), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hz) * (p->k_layers + 1), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
 }
 
-/** MPI: Exhanges E field between ranks
- * Parameters:
- *  p: The parameters of the simulation
- *  f: The simulated fields
+/**
+ * @brief (MPI) Exchanges E field between ranks
+ * @param p The parameters of the simulation
+ * @param f The simulated fields
 */
 void exchange_E_field(Parameters *p, Fields *f)
 {
-    MPI_Request req;
-    MPI_Isend(&f->Ex[kEx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Ez[kEz(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Ez[kEz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, &req);
-    MPI_Request_free(&req);
+    MPI_Request req[6];
+    MPI_Isend(&f->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
+    MPI_Isend(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
+    MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[2]);
+    MPI_Isend(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, &req[3]);
+    MPI_Isend(&f->Ez[kEz(p, 0, 0, 1)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req[4]);
+    MPI_Isend(&f->Ez[kEz(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, &req[5]);
 
-    MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Ey, sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Ex, sizeof_xy_plane(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Ez, sizeof_xy_plane(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->Ey, sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->Ex, sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->Ez, sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Waitall(6, req, MPI_STATUSES_IGNORE);
 }
 
-/** Echanges the H field between ranks (MPI)
- * Parameters:
- *  p: The parameters of the simulation
- *  f: The simulated fields
+/** 
+ * @brief Exchanges the H field between ranks (MPI)
+ * @param p The parameters of the simulation
+ * @param f The simulated fields
 */
 void exchange_H_field(Parameters *p, Fields *f)
 {
-    MPI_Request req;
-    MPI_Isend(&f->Hx[kHx(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Hy[kHy(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Hz[kHz(p, 0, 0, 1)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req);
-    MPI_Isend(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, &req);
-    MPI_Request_free(&req);
+    MPI_Request req[6];
+    MPI_Isend(&f->Hx[kHx(p, 0, 0, 1)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
+    MPI_Isend(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
+    MPI_Isend(&f->Hy[kHy(p, 0, 0, 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[2]);
+    MPI_Isend(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, &req[3]);
+    MPI_Isend(&f->Hz[kHz(p, 0, 0, 1)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req[4]);
+    MPI_Isend(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, &req[5]);
 
-    MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Hx, sizeof_xy_plane(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Hy, sizeof_xy_plane(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Hz, sizeof_xy_plane(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->Hx, sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->Hy, sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Recv(f->Hz, sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Waitall(6, req, MPI_STATUSES_IGNORE);
 }
 
-/** Propagate the Electrical and Magnetic field using FDTD algorithm
- * Parameters:
- *  pFields: The fields
- *  pValidationFields: The ValidationFields
- *  pParams:    The parameters of the simulation
- *  pOven: The oven properties
+/** 
+ * @brief Propagate the Electrical and Magnetic field using FDTD algorithm
+ * @param pFields           The fields
+ * @param pValidationFields The ValidationFields
+ * @param pParams           The parameters of the simulation
 */
-static void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams, Oven *pOven)
+static void propagate_fields(Fields *pFields, Fields *pValidationFields, Parameters *pParams)
 {
     double timer;
     double total_energy;
@@ -1019,7 +1004,7 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
         if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
-            write_silo(joined_fields, pValidationFields, pParams, pOven, iteration);
+            write_silo(joined_fields, pValidationFields, pParams, iteration);
 
         if (pParams->mode == COMPUTATION_MODE && pParams->rank == 0)
             set_source(pParams, pFields, timer);
@@ -1052,11 +1037,9 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
     }
 }
 
-/**
-------------------------------------------------------
----------------------------------------- Main function
-------------------------------------------------------
-*/
+//--------------------------------------------------------------------------------------------------
+//------------------------------------------------------------------------------------ Main function
+//--------------------------------------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
     MPI_Init(&argc, &argv);
@@ -1076,7 +1059,7 @@ int main(int argc, char *argv[])
         fail(pParameters->ls, "The time step must be lower than the simulation time!");
 
     printf("Process %d: Creating mesh\n", rank);
-    Oven *pOven = compute_oven(pParameters);
+    compute_oven(pParameters);
 
     printf("Process %d: Initializing fields\n", rank);
     Fields *pFields = initialize_cpu_fields(pParameters);
@@ -1098,7 +1081,7 @@ int main(int argc, char *argv[])
     }
 
     printf("Process %d: Launching simulation\n", rank);
-    propagate_fields(pFields, pValidationFields, pParameters, pOven);
+    propagate_fields(pFields, pValidationFields, pParameters);
     printf("Process %d: Freeing memory...\n", rank);
 
     freeAll(pParameters->ls);
