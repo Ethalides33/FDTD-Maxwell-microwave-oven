@@ -371,37 +371,37 @@ Fields *initialize_fields(Parameters *params)
  * Returns:
  *  The index in a 1D array
 **/
-size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_t mi, size_t mj)
+static inline size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_t mi, size_t mj)
 {
     return i + j * (params->maxi + mi) + k * (params->maxi + mi) * (params->maxj + mj);
 }
 
-size_t kEx(Parameters *p, size_t i, size_t j, size_t k)
+static inline size_t kEx(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 0, 1);
 }
 
-size_t kEy(Parameters *p, size_t i, size_t j, size_t k)
+static inline size_t kEy(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 1, 0);
 }
 
-size_t kEz(Parameters *p, size_t i, size_t j, size_t k)
+static inline size_t kEz(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 1, 1);
 }
 
-size_t kHx(Parameters *p, size_t i, size_t j, size_t k)
+static inline size_t kHx(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 1, 0);
 }
 
-size_t kHy(Parameters *p, size_t i, size_t j, size_t k)
+static inline size_t kHy(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 0, 1);
 }
 
-size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
+static inline size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 {
     return idx(p, i, j, k, 0, 0);
 }

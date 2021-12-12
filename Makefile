@@ -15,7 +15,7 @@ noth5:
 	gcc ${SRC} -lm -lsilo -std=c99 -o ${EXE}
 
 optimized:
-	gcc ${SRC} -lm -lsilo -std=c99 -o -O3 ${EXE}
+	gcc ${SRC} -lm -lsiloh5 -std=c99 -O3 -o ${EXE}
 
 debug:
 	gcc ${SRC} -g -lm -lsiloh5 -std=c99 -o ${EXE}
