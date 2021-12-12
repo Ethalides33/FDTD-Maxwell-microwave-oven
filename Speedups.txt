@@ -49,4 +49,22 @@ sys     0m0,792s
 Mean user time: 11.770
 Speedup: 16.212/11.770 = 1.38!
 
-===============================================================================================
+======================================================Combining Consecutive loops with if statements
+real    0m12,077s
+user    0m11,549s
+sys     0m0,528s
+
+real    0m12,333s
+user    0m11,602s
+sys     0m0,720s
+
+real    0m12,578s
+user    0m11,837s
+sys     0m0,740s
+
+Mean user time: 11.663
+Speedup: 1.009 => Negligeable...
+
+Abandonned optimization idea
+
+=============================================
