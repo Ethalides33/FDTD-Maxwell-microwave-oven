@@ -286,51 +286,30 @@ Parameters *load_parameters(const char *filename)
     pParameters->k_layers = endk - pParameters->startk;*/
 
     /*FROM STACKOVERFLOW https://stackoverflow.com/questions/15658145/how-to-share-work-roughly-evenly-between-processes-in-mpi-despite-the-array-size*/
-    int count = pParameters->maxk / pParameters->ranks;
-    int remainder = pParameters->maxk % pParameters->ranks;
-    int start, stop;
+    size_t count = pParameters->maxk / pParameters->ranks;
+    size_t remainder = pParameters->maxk % pParameters->ranks;
+    size_t stop;
 
     if (pParameters->rank < remainder)
     {
         // The first 'remainder' ranks get 'count + 1' tasks each
-        start = pParameters->rank * (count + 1);
-        pParameters->startk = start;
-        stop = start + count;
+        pParameters->startk = pParameters->rank * (count + 1);
+        stop = pParameters->startk + count;
         stop++;
     }
     else
     {
         // The remaining 'size - remainder' ranks get 'count' task each
-        start = pParameters->rank * count + remainder;
-        pParameters->startk = start;
-        stop = start + (count - 1);
+        pParameters->startk = pParameters->rank * count + remainder;
+        stop = pParameters->startk + (count - 1);
         stop++;
     }
-    pParameters->k_layers = stop - start;
-
-    size_t *start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
-    for (size_t i = 0; i < pParameters->ranks; i++)
+    pParameters->k_layers = stop - pParameters->startk;
+    if (pParameters->rank == 0)
     {
-        if (i < remainder)
-        {
-            // The first 'remainder' ranks get 'count + 1' tasks each
-            start = i * (count + 1);
-            pParameters->startk = start;
-            stop = start + count;
-            stop++;
-        }
-        else
-        {
-            // The remaining 'size - remainder' ranks get 'count' task each
-            start = i * count + remainder;
-            pParameters->startk = start;
-            stop = start + (count - 1);
-            stop++;
-        }
-        start_k_of_rank[i] = start;
+        pParameters->start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
+        MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
     }
-
-    pParameters->start_k_of_rank = start_k_of_rank;
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
     pParameters->ls = ls;
