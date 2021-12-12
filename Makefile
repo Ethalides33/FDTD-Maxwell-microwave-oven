@@ -2,20 +2,23 @@ SRC=main.c
 EXE=microwave
 
 all:
+	@echo "If you get error 'not found silo library', run 'make noth5'"
+	@echo "Use 'make optimized' for tremendous execution speed!"
+	@echo "----"
+	@echo "Removing old executables..."
 	make clean
 	mkdir r
+	@echo "Compiling..."
 	gcc ${SRC} -lm -lsiloh5 -std=c99 -o ${EXE}
 
 noth5:
-	@echo "If you get error 'not found silo library', run 'make h5'"
 	gcc ${SRC} -lm -lsilo -std=c99 -o ${EXE}
+
+optimized:
+	gcc ${SRC} -lm -lsilo -std=c99 -o -O3 ${EXE}
 
 debug:
 	gcc ${SRC} -g -lm -lsiloh5 -std=c99 -o ${EXE}
-
-parallel:
-	# Check to add MPI library ?
-	gcc ${SRC} -lm -lsilo -fopenmp -std=c99 -o ${EXE}
 
 clean:
 	rm -rf r
