@@ -107,14 +107,14 @@ typedef struct parameters
     Fields *mean;    // Mean fields
 
     // Parallelization stuff
-    int rank;        // The rank of the current process
-    int ranks;       // The number of ranks, aka. MPI_Comm_size
-    size_t startk;   // The index of the first rank treaten by the current rank
-    size_t k_layers; // The number of layers on the (X,Y) plane treaten by current rank
-    int lower_cpu;   // The rank of the process working on the plane below (Z-1)
-    int upper_cpu;   // The rank of the CPU working on the plane above (Z+1)
-    int *start_k_of_rank;
-    ChainedAllocated *ls; // The chained list of allocated objects by this process
+    int rank;                // The rank of the current process
+    int ranks;               // The number of ranks, aka. MPI_Comm_size
+    size_t startk;           // The index of the first rank treaten by the current rank
+    size_t k_layers;         // The number of layers on the (X,Y) plane treaten by current rank
+    int lower_cpu;           // The rank of the process working on the plane below (Z-1)
+    int upper_cpu;           // The rank of the CPU working on the plane above (Z+1)
+    size_t *start_k_of_rank; // The starting k of each process
+    ChainedAllocated *ls;    // The chained list of allocated objects by this process
 } Parameters;
 
 //--------------------------------------------------------------------------------------------------
@@ -290,45 +290,47 @@ Parameters *load_parameters(const char *filename)
     int remainder = pParameters->maxk % pParameters->ranks;
     int start, stop;
 
-if (pParameters->rank < remainder) {
-    // The first 'remainder' ranks get 'count + 1' tasks each
-    start = pParameters->rank * (count + 1);
-    pParameters->startk = start;
-    stop = start + count;
-    stop++;
-} else {
-    // The remaining 'size - remainder' ranks get 'count' task each
-    start = pParameters->rank * count + remainder;
-    pParameters->startk = start;
-    stop = start + (count - 1);
-    stop++;
-}
-pParameters->k_layers=stop - start;
-printf("size: %d", pParameters->maxk);
-printf("Processor : %d, Start: %d, End: %d, klayers: %d \n", pParameters->rank, start, stop, pParameters->k_layers);
+    if (pParameters->rank < remainder)
+    {
+        // The first 'remainder' ranks get 'count + 1' tasks each
+        start = pParameters->rank * (count + 1);
+        pParameters->startk = start;
+        stop = start + count;
+        stop++;
+    }
+    else
+    {
+        // The remaining 'size - remainder' ranks get 'count' task each
+        start = pParameters->rank * count + remainder;
+        pParameters->startk = start;
+        stop = start + (count - 1);
+        stop++;
+    }
+    pParameters->k_layers = stop - start;
 
-int start_k_of_rank[pParameters->ranks];
-for (size_t i=0; i<pParameters->ranks; i++)
-{
-if (i < remainder) {
-    // The first 'remainder' ranks get 'count + 1' tasks each
-    start = i * (count + 1);
-    pParameters->startk = start;
-    stop = start + count;
-    stop++;
-} else {
-    // The remaining 'size - remainder' ranks get 'count' task each
-    start = i * count + remainder;
-    pParameters->startk = start;
-    stop = start + (count - 1);
-    stop++;
-}
-start_k_of_rank[i] =  start;
-}
+    size_t *start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
+    for (size_t i = 0; i < pParameters->ranks; i++)
+    {
+        if (i < remainder)
+        {
+            // The first 'remainder' ranks get 'count + 1' tasks each
+            start = i * (count + 1);
+            pParameters->startk = start;
+            stop = start + count;
+            stop++;
+        }
+        else
+        {
+            // The remaining 'size - remainder' ranks get 'count' task each
+            start = i * count + remainder;
+            pParameters->startk = start;
+            stop = start + (count - 1);
+            stop++;
+        }
+        start_k_of_rank[i] = start;
+    }
 
     pParameters->start_k_of_rank = start_k_of_rank;
-    for (size_t i=0; i<pParameters->ranks; i++)
-    printf("%d \n", pParameters->start_k_of_rank[i]);
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
     pParameters->ls = ls;
@@ -929,10 +931,8 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
     //printf("rank in fct: %d \n", p->rank);
 
     for (int i = 1; i < p->ranks; ++i)
-    {    
-    size_t k_offset = p->start_k_of_rank[i];
-
-        printf("%d", p->start_k_of_rank[i]);
+    {
+        size_t k_offset = p->start_k_of_rank[i];
         MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ex) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ey) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
         MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ez) * (p->maxk - k_offset), MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
