@@ -378,32 +378,32 @@ static inline size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_
 
 static inline size_t kEx(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return idx(p, i, j, k, 0, 1);
+    return i + j * p->maxi + k * p->maxi * (p->maxj + 1);
 }
 
 static inline size_t kEy(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return idx(p, i, j, k, 1, 0);
+    return i + j * (p->maxi + 1) + k * (p->maxi + 1) * p->maxj;
 }
 
 static inline size_t kEz(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return idx(p, i, j, k, 1, 1);
+    return i + j * (p->maxi + 1) + k * (p->maxi + 1) * (p->maxj + 1);
 }
 
 static inline size_t kHx(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return idx(p, i, j, k, 1, 0);
+    return i + j * (p->maxi + 1) + k * (p->maxi + 1) * p->maxj;
 }
 
 static inline size_t kHy(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return idx(p, i, j, k, 0, 1);
+    return i + j * p->maxi + k * p->maxi * (p->maxj + 1);
 }
 
 static inline size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return idx(p, i, j, k, 0, 0);
+    return i + j * p->maxi + k * p->maxi * p->maxj;
 }
 
 /** Sets the initial field as asked in Question 3.a.

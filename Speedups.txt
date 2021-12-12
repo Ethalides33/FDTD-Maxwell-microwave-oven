@@ -1,0 +1,52 @@
+==================================================================================nested loops order
+With i,j,k loops order:
+real    0m19,341s
+user    0m18,822s
+sys     0m0,516s
+
+real    0m19,757s
+user    0m18,970s
+sys     0m0,772s
+
+real    0m20,819s
+user    0m20,119s
+sys     0m0,688s
+
+With k,j,i loops order:
+real    0m16,703s
+user    0m16,195s
+sys     0m0,505s
+
+real    0m16,900s
+user    0m16,151s
+sys     0m0,736s
+
+real    0m17,075s
+user    0m16,290s
+sys     0m0,781s
+
+=> Mean user time from 19.304s to 16.212s, which is a speedup of 1.19x!
+
+==============================================================================Inline index functions
+
+Just typing "static inline" in front of the function didn't speedup anything...
+This is because the compiler doesn't look too deep into the code and each indexing function
+relyed on the first one (idx) to return the result. By manually substitutig the operations,
+We drastically reduced execution time once again:
+
+real    0m12,313s
+user    0m11,737s
+sys     0m0,576s
+
+real    0m12,533s
+user    0m11,734s
+sys     0m0,789s
+
+real    0m12,632s
+user    0m11,838s
+sys     0m0,792s
+
+Mean user time: 11.770
+Speedup: 16.212/11.770 = 1.38!
+
+===============================================================================================
