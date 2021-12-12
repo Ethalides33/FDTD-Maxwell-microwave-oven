@@ -1,0 +1,27 @@
+With i,j,k loops order:
+real    0m19,341s
+user    0m18,822s
+sys     0m0,516s
+
+real    0m19,757s
+user    0m18,970s
+sys     0m0,772s
+
+real    0m20,819s
+user    0m20,119s
+sys     0m0,688s
+
+With k,j,i loops order:
+real    0m16,703s
+user    0m16,195s
+sys     0m0,505s
+
+real    0m16,900s
+user    0m16,151s
+sys     0m0,736s
+
+real    0m17,075s
+user    0m16,290s
+sys     0m0,781s
+
+=> Mean user time from 19.304s to 16.212s, which is a speedup of 1.19x!
