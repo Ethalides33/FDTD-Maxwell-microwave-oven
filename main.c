@@ -306,9 +306,7 @@ Parameters *load_parameters(const char *filename)
     }
     pParameters->k_layers = stop - pParameters->startk;
     if (pParameters->rank == 0)
-    {
         pParameters->start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
-    }
     MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
