@@ -308,8 +308,8 @@ Parameters *load_parameters(const char *filename)
     if (pParameters->rank == 0)
     {
         pParameters->start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
-        MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
     }
+    MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
     pParameters->ls = ls;
@@ -965,21 +965,21 @@ void send_fields_to_main(Fields *pFields, Parameters *p)
 */
 void exchange_E_field(Parameters *p, Fields *f)
 {
-    MPI_Request req[6];
+    MPI_Request req[4];
     MPI_Isend(&f->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
     MPI_Isend(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
     MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[2]);
     MPI_Isend(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, &req[3]);
-    MPI_Isend(&f->Ez[kEz(p, 0, 0, 1)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req[4]);
-    MPI_Isend(&f->Ez[kEz(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, &req[5]);
+    //MPI_Isend(&f->Ez[kEz(p, 0, 0, 1)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req[4]);
+    //MPI_Isend(&f->Ez[kEz(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, &req[5]);
 
-    MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    //MPI_Recv(&f->Ez[kEz(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->upper_cpu, EZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Ey, sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Ex, sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Ez, sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Waitall(6, req, MPI_STATUSES_IGNORE);
+    //MPI_Recv(f->Ez, sizeof_XY(p, f, f->Ez), MPI_DOUBLE, p->lower_cpu, EZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Waitall(4, req, MPI_STATUSES_IGNORE);
 }
 
 /** 
@@ -989,21 +989,21 @@ void exchange_E_field(Parameters *p, Fields *f)
 */
 void exchange_H_field(Parameters *p, Fields *f)
 {
-    MPI_Request req[6];
+    MPI_Request req[4];
     MPI_Isend(&f->Hx[kHx(p, 0, 0, 1)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
     MPI_Isend(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
     MPI_Isend(&f->Hy[kHy(p, 0, 0, 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[2]);
     MPI_Isend(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, &req[3]);
-    MPI_Isend(&f->Hz[kHz(p, 0, 0, 1)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req[4]);
-    MPI_Isend(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, &req[5]);
+    //MPI_Isend(&f->Hz[kHz(p, 0, 0, 1)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, &req[4]);
+    //MPI_Isend(&f->Hz[kHz(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, &req[5]);
 
     MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Hx, sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Hy, sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Hz, sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Waitall(6, req, MPI_STATUSES_IGNORE);
+    //MPI_Recv(&f->Hz[kHz(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->upper_cpu, HZ_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    //MPI_Recv(f->Hz, sizeof_XY(p, f, f->Hz), MPI_DOUBLE, p->lower_cpu, HZ_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    MPI_Waitall(4, req, MPI_STATUSES_IGNORE);
 }
 
 /** 
@@ -1034,7 +1034,6 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
     }
     else
         send_fields_to_main(pFields, pParams);
-
     // Propagation and dumps
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
@@ -1057,6 +1056,12 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
         else
             send_fields_to_main(pFields, pParams);
 
+        if(pParams->rank==0 && join_fields != NULL){
+            mean_fields(pParams, joined_fields);
+            printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
+            printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+
+        }
         if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
         {
             mean_fields(pParams, joined_fields);
@@ -1065,8 +1070,8 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
                 update_validation_fields_then_subfdtd(pParams, pValidationFields, timer);
                 //printf("Electrical energy: %0.20f \n", calculate_E_energy(pParams));
                 //printf("Magnetic energy: %0.20f \n", calculate_H_energy(pParams));
-                //printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
-                //printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+                printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
+                printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
                 //assert((calculate_E_energy(pParams) + calculate_H_energy(pParams) - total_energy) <= 0.000001);
             }
 
