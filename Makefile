@@ -16,7 +16,7 @@ debug:
 parallel:
 	make clean
 	mkdir r
-	mpicc ${SRC} -lm -lsiloh5 -std=c99 -o ${EXE}
+	mpicc ${SRC} -lm -lsiloh5 -std=c99 -O3 -o ${EXE}
 
 run:
 	mpirun -np 4 -v ${EXE} ./params.txt

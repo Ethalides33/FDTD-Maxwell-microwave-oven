@@ -101,10 +101,11 @@ typedef struct parameters
     int mode;                   // 0 for validation mode, 1 for computation
 
     // Mesh directly derived from parameters above and useless to recompute at each timestep
-    int *dims;       // Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
-    int *vdims;      // Array of the sizez of each dimension for variables (maxi, maxj, mak)
-    double **coords; // Cordinates of each mesh point (grid)
-    Fields *mean;    // Mean fields
+    int *dims;                 // Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
+    int *vdims;                // Array of the sizez of each dimension for variables (maxi, maxj, mak)
+    double **coords;           // Cordinates of each mesh point (grid)
+    Fields *mean;              // Mean fields
+    Fields *validation_fields; // Validation fields
 
     // Parallelization stuff
     int rank;                // The rank of the current process
@@ -823,31 +824,46 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFie
     //printf("frequency: %0.10f \n", f_mnl);
     //printf("z_te: %0.10f \n", Z_te);
 
-    double *vEy = pValidationFields->Ey;
-    double *vHx = pValidationFields->Hx;
-    double *vHz = pValidationFields->Hz;
+    double *vEy = p->validation_fields->Ey;
+    double *vHx = p->validation_fields->Hx;
+    double *vHz = p->validation_fields->Hz;
 
     size_t i, j, k;
+    for (k = 0; k < p->maxk + 1; ++k)
+        for (j = 0; j < p->maxj; ++j)
+            for (i = 0; i < p->maxi + 1; ++i)
+            {
+                vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
+                                        sin(PI * i * p->spatial_step / p->length) *
+                                        sin(PI * k * p->spatial_step / p->height));
+
+                if (k != p->maxk)
+                    vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
+                                            sin(2 * PI * f_mnl * time_counter) *
+                                            sin(PI * i * p->spatial_step / p->length) *
+                                            cos(PI * k * p->spatial_step / p->height));
+
+                if (i != p->maxi)
+                    vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->length) *
+                                            sin(2 * PI * f_mnl * time_counter) *
+                                            cos(PI * i * p->spatial_step / p->length) *
+                                            sin(PI * k * p->spatial_step / p->height));
+            }
+
+    aggregate_E_field(p, vEy, pValidationFields->Ey, 1, 0, 1);
+    aggregate_H_field(p, vHx, pValidationFields->Hx, 1, 0, 0);
+    aggregate_H_field(p, vHz, pValidationFields->Hz, 0, 0, 1);
+
+    vEy = pValidationFields->Ey;
+    vHx = pValidationFields->Hx;
+    vHz = pValidationFields->Hz;
     for (k = 0; k < p->maxk; ++k)
         for (j = 0; j < p->maxj; ++j)
             for (i = 0; i < p->maxi; ++i)
             {
-                vEy[idx(p, i, j, k, 0, 0)] = (cos(2 * PI * f_mnl * time_counter) *
-                                              sin(PI * i * p->spatial_step / p->length) *
-                                              sin(PI * k * p->spatial_step / p->height)) -
-                                             p->mean->Ey[idx(p, i, j, k, 0, 0)];
-
-                vHx[idx(p, i, j, k, 0, 0)] = ((1.0 / Z_te) *
-                                              sin(2 * PI * f_mnl * time_counter) *
-                                              sin(PI * i * p->spatial_step / p->length) *
-                                              cos(PI * k * p->spatial_step / p->height)) -
-                                             p->mean->Hx[idx(p, i, j, k, 0, 0)];
-
-                vHz[idx(p, i, j, k, 0, 0)] = (-PI / (omega * MU * p->length) *
-                                              sin(2 * PI * f_mnl * time_counter) *
-                                              cos(PI * i * p->spatial_step / p->length) *
-                                              sin(PI * k * p->spatial_step / p->height)) -
-                                             p->mean->Hz[idx(p, i, j, k, 0, 0)];
+                vEy[idx(p, i, j, k, 0, 0)] -= p->mean->Ey[idx(p, i, j, k, 0, 0)];
+                vHx[idx(p, i, j, k, 0, 0)] -= p->mean->Hx[idx(p, i, j, k, 0, 0)];
+                vHz[idx(p, i, j, k, 0, 0)] -= p->mean->Hz[idx(p, i, j, k, 0, 0)];
             }
 }
 
@@ -970,11 +986,11 @@ void exchange_E_field(Parameters *p, Fields *f)
     MPI_Isend(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
     MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[2]);
     MPI_Isend(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, &req[3]);
-    
+
     MPI_Recv(f->Ey, sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Ex, sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);\
+    MPI_Recv(f->Ex, sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     MPI_Waitall(4, req, MPI_STATUSES_IGNORE);
 }
@@ -996,7 +1012,7 @@ void exchange_H_field(Parameters *p, Fields *f)
     MPI_Recv(f->Hx, sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Hy, sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    
+
     MPI_Waitall(4, req, MPI_STATUSES_IGNORE);
 }
 
@@ -1111,11 +1127,15 @@ int main(int argc, char *argv[])
         if (rank == 0)
         {
             pValidationFields = initialize_mean_fields(pParameters);
+            pParameters->validation_fields = initialize_fields(pParameters);
             printf("Main process: Validation mode activated. \n");
             // Free what's not needed for validation.
             Free(&(pParameters->ls), pValidationFields->Ex);
             Free(&(pParameters->ls), pValidationFields->Ez);
             Free(&(pParameters->ls), pValidationFields->Hy);
+            Free(&(pParameters->ls), pParameters->validation_fields->Ex);
+            Free(&(pParameters->ls), pParameters->validation_fields->Ez);
+            Free(&(pParameters->ls), pParameters->validation_fields->Hy);
         }
         printf("Process %d: Setting initial conditions\n", rank);
         set_initial_conditions(pFields->Ey, pParameters);
