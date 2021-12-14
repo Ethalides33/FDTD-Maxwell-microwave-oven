@@ -88,9 +88,9 @@ typedef struct fields
 /// @brief Parameters of the simulation
 typedef struct parameters
 {
-    float width;                // a in figure (y, in paper cs)
-    float height;               // b in figure (z, in paper cs)
-    float length;               // d in figure (x, in paper cs)
+    float width;                // a, x in figure (y, in paper cs)
+    float height;               // b, y in figure (z, in paper cs)
+    float length;               // d, z in figure (x, in paper cs)
     size_t maxi;                // Number of grid subdivisions (x dimension)
     size_t maxj;                // Number of grid subdivisions (y dimension)
     size_t maxk;                // Number of grid subdivisions (z dimension)
@@ -557,7 +557,7 @@ void set_initial_conditions(double *Ey, Parameters *p)
     for (k = 1; k < p->k_layers + 2; ++k)
         for (j = 0; j < p->maxj; ++j)
             for (i = 0; i < p->maxi + 1; ++i)
-                Ey[kEy(p, i, j, k)] = sin(PI * (p->startk + k - 1) * p->spatial_step / p->width) *
+                Ey[kEy(p, i, j, k)] = sin(PI * (p->startk + k - 1) * p->spatial_step / p->height) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
 
