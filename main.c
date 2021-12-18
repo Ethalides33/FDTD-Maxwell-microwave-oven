@@ -867,6 +867,18 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFie
             }
 }
 
+
+double calculate_e_y_error(Parameters *p, Fields *pValidationFields){
+
+double ey_error=0.0;
+for (size_t k = 0; k < p->maxk; ++k)
+        for (size_t j = 0; j < p->maxj; ++j)
+            for (size_t i = 0; i < p->maxi; ++i)
+            {
+                ey_error += pValidationFields->Ey[kEy(p,i,j,k)];
+            }
+return ey_error;
+}
 /** 
  * @brief Sets the source in computation mode
  * @param p The parameters of the simulation
@@ -876,9 +888,9 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFie
 void set_source(Parameters *p, Fields *pFields, double time_counter)
 {
     double *Ex = pFields->Ex;
-    double *Ez = pFields->Ez;
+    double *Ey = pFields->Ey;
     double *Hx = pFields->Hx;
-    double *Hz = pFields->Hz;
+    double *Hy = pFields->Hy;
 
     double aprime = 0.005;
     double bprime = 0.005;
@@ -908,9 +920,9 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
         {
-            Ez[kEz(p, i, j, 1)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
+            Ey[kEy(p, i, j, 1)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
             Ex[kEx(p, i, j, 1)] = 0;
-            Hz[kHz(p, i, j, 1)] = 0;
+            Hy[kHy(p, i, j, 1)] = 0;
             Hx[kHx(p, i, j, 1)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
         }
 }
