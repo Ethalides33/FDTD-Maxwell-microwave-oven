@@ -852,18 +852,6 @@ void update_validation_fields(Parameters *p, Fields *pValidationFields, double t
     aggregate_E_field(p, vEy, pValidationFields->Ey, 1, 0, 1);
     aggregate_H_field(p, vHx, pValidationFields->Hx, 1, 0, 0);
     aggregate_H_field(p, vHz, pValidationFields->Hz, 0, 0, 1);
-    /*
-    vEy = pValidationFields->Ey;
-    vHx = pValidationFields->Hx;
-    vHz = pValidationFields->Hz;
-    for (k = 0; k < p->maxk; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi; ++i)
-            {
-                vEy[idx(p, i, j, k, 0, 0)] -= p->mean->Ey[idx(p, i, j, k, 0, 0)];
-                vHx[idx(p, i, j, k, 0, 0)] -= p->mean->Hx[idx(p, i, j, k, 0, 0)];
-                vHz[idx(p, i, j, k, 0, 0)] -= p->mean->Hz[idx(p, i, j, k, 0, 0)];
-            }*/
 }
 
 /** 
@@ -919,7 +907,7 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
  * @param p    The parameters of the simulation containing the mean aggregation of simulated fields
  * @param v    The validation fields
  */
-void norm_mse(Parameters *p, Fields *v, double timer)
+void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
 {
     double *vEy = v->Ey;
     double *vHx = v->Hx;
@@ -946,13 +934,18 @@ void norm_mse(Parameters *p, Fields *v, double timer)
             }
 
     FILE *csv;
-    csv = fopen("normalized_mse.csv", "a");
+    csv = fopen("data.csv", "a");
     if (csv == NULL)
-        fail(p->ls, "Cannot open file normalized_mse.csv");
+        fail(p->ls, "Cannot open file data.csv");
 
-    fprintf(csv, "Ey,%.20lf,%.20lf\n", Er_Ey_num / Er_Ey_div, timer);
-    fprintf(csv, "Hx,%.20lf,%.20lf\n", Er_Hx_num / Er_Hx_div, timer);
-    fprintf(csv, "Hz,%.20lf,%.20lf\n", Er_Hz_num / Er_Hz_div, timer);
+    fprintf(csv, "NormMSEEy,%.20lf,%.20lf\n", Er_Ey_num / Er_Ey_div, timer);
+    fprintf(csv, "NormMSEHx,%.20lf,%.20lf\n", Er_Hx_num / Er_Hx_div, timer);
+    fprintf(csv, "NormMSEHz,%.20lf,%.20lf\n", Er_Hz_num / Er_Hz_div, timer);
+
+    fprintf(csv, "EnergyElectric,%0.20f,%.20lf\n", calculate_E_energy(p), timer);
+    fprintf(csv, "EnergyMagnetic,%0.20f,%.20lf\n", calculate_H_energy(p), timer);
+    fprintf(csv, "EnergyTotal,%0.20f,%.20lf\n", calculate_E_energy(p) + calculate_H_energy(p), timer);
+    fprintf(csv, "EnergyTotalTheory,%0.20f,%.20lf\n", (EPSILON * p->length * p->width * p->height) / 8., timer);
 
     fclose(csv);
 }
@@ -1025,14 +1018,10 @@ void exchange_E_field(Parameters *p, Fields *f)
 {
     MPI_Request req[2];
     MPI_Isend(&f->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
-    //MPI_Isend(&f->Ex[kEx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
     MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[1]);
-    //MPI_Isend(&f->Ey[kEy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, &req[3]);
 
-    //MPI_Recv(f->Ey, sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    //MPI_Recv(f->Ex, sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
 }
@@ -1045,14 +1034,10 @@ void exchange_E_field(Parameters *p, Fields *f)
 void exchange_H_field(Parameters *p, Fields *f)
 {
     MPI_Request req[2];
-    //MPI_Isend(&f->Hx[kHx(p, 0, 0, 1)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
     MPI_Isend(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, &req[0]);
-    //MPI_Isend(&f->Hy[kHy(p, 0, 0, 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[2]);
     MPI_Isend(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
 
-    //MPI_Recv(&f->Hx[kHx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Hx, sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    //MPI_Recv(&f->Hy[kHy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
     MPI_Recv(f->Hy, sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
     MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
@@ -1108,25 +1093,13 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
         else
             send_fields_to_main(pFields, pParams);
 
-        if (pParams->rank == 0 && join_fields != NULL)
-        {
-            mean_fields(pParams, joined_fields);
-            printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
-            printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
-        }
         if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
         {
             mean_fields(pParams, joined_fields);
             if (pParams->mode == VALIDATION_MODE)
             {
                 update_validation_fields(pParams, pValidationFields, timer);
-                //printf("Electrical energy: %0.20f \n", calculate_E_energy(pParams));
-                //printf("Magnetic energy: %0.20f \n", calculate_H_energy(pParams));
-                printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
-                printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
-
-                norm_mse(pParams, pValidationFields, timer);
-                //assert((calculate_E_energy(pParams) + calculate_H_energy(pParams) - total_energy) <= 0.000001);
+                norm_mse_dump_csv(pParams, pValidationFields, timer);
             }
 
             write_silo(pValidationFields, pParams, iteration);
