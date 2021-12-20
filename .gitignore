@@ -2,3 +2,5 @@ microwave
 *.silo
 temp.txt
 FDTD-Maxwell-microwave-oven.zip
+*csv
+out.txt

@@ -5,5 +5,22 @@
         "string_view": "c",
         "initializer_list": "c",
         "utility": "c"
-    }
+    },
+    "cSpell.words": [
+        "Amaury",
+        "Baret",
+        "FDTD",
+        "Finta",
+        "Geuzaine",
+        "Hiard",
+        "Ionut",
+        "Isend",
+        "Leduc",
+        "Liège",
+        "maxj",
+        "maxk",
+        "startk",
+        "subfdtd",
+        "vdims"
+    ]
 }

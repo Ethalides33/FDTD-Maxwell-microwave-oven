@@ -73,15 +73,15 @@ typedef struct chainedAllocated
     void *ptr;                         // The current allocated object
 } ChainedAllocated;
 
-/// @brief A structure that rassembles all the fields components
+/// @brief A structure that reassembles all the fields components
 typedef struct fields
 {
     double *Ex; // The arrays of the x components of the electric field
     double *Ey; // The arrays of the y components of the electric field
     double *Ez; // The arrays of the z components of the electric field
-    double *Hx; // The arrays of the x componnents of the magnetic field
-    double *Hy; // The arrays of the y componnents of the magnetic field
-    double *Hz; // The arrays of the z componnents of the magnetic field
+    double *Hx; // The arrays of the x components of the magnetic field
+    double *Hy; // The arrays of the y components of the magnetic field
+    double *Hz; // The arrays of the z components of the magnetic field
 
 } Fields;
 
@@ -102,16 +102,16 @@ typedef struct parameters
 
     // Mesh directly derived from parameters above and useless to recompute at each timestep
     int *dims;                 // Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
-    int *vdims;                // Array of the sizez of each dimension for variables (maxi, maxj, mak)
-    double **coords;           // Cordinates of each mesh point (grid)
+    int *vdims;                // Array of the sizes of each dimension for variables (maxi, maxj, mak)
+    double **coords;           // Coordinates of each mesh point (grid)
     Fields *mean;              // Mean fields
     Fields *validation_fields; // Validation fields
 
     // Parallelization stuff
     int rank;                // The rank of the current process
     int ranks;               // The number of ranks, aka. MPI_Comm_size
-    size_t startk;           // The index of the first rank treaten by the current rank
-    size_t k_layers;         // The number of layers on the (X,Y) plane treaten by current rank
+    size_t startk;           // The index of the first rank treated by the current rank
+    size_t k_layers;         // The number of layers on the (X,Y) plane treated by current rank
     int lower_cpu;           // The rank of the process working on the plane below (Z-1)
     int upper_cpu;           // The rank of the CPU working on the plane above (Z+1)
     size_t *start_k_of_rank; // The starting k of each process
@@ -206,7 +206,7 @@ double *Malloc_Double(ChainedAllocated **pLs, size_t len)
 
 /**
  * @brief Debug utility to print the chained list of pointers in heap
- * @param ls The pointer to the chained list of poinetrs
+ * @param ls The pointer to the chained list of pointers
  * @note It's better to never need that!
 */
 static void printHeap(ChainedAllocated *ls)
@@ -282,11 +282,8 @@ Parameters *load_parameters(const char *filename)
     MPI_Comm_size(MPI_COMM_WORLD, &pParameters->ranks);
     MPI_Comm_rank(MPI_COMM_WORLD, &pParameters->rank);
 
-    /*pParameters->startk = pParameters->maxk * pParameters->rank / pParameters->ranks;
-    size_t endk = pParameters->maxk * (pParameters->rank + 1) / pParameters->ranks;
-    pParameters->k_layers = endk - pParameters->startk;*/
-
-    /*FROM STACKOVERFLOW https://stackoverflow.com/questions/15658145/how-to-share-work-roughly-evenly-between-processes-in-mpi-despite-the-array-size*/
+    // Solution to equally divide the workload between processes
+    // Found on Stackoverflow: https://stackoverflow.com/a/26554699
     size_t count = pParameters->maxk / pParameters->ranks;
     size_t remainder = pParameters->maxk % pParameters->ranks;
     size_t stop;
@@ -306,9 +303,12 @@ Parameters *load_parameters(const char *filename)
         stop++;
     }
     pParameters->k_layers = stop - pParameters->startk;
+
+    // Gather all the start_k in an array of process 0
     if (pParameters->rank == 0)
         pParameters->start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
     MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
     pParameters->ls = ls;
@@ -346,7 +346,6 @@ void *compute_oven(Parameters *params)
     for (int i = 0; i < params->maxk + 1; ++i)
         z[i] = i * dx;
 
-    int ndims = 3;
     double *cords[] = {x, y, z};
 
     params->coords[0] = x;
@@ -473,7 +472,7 @@ Fields *initialize_cpu_fields(Parameters *params)
  * @brief Fast shortcut to get the index of a field at i, j and k
  * @param params The parameters of the simulation
  * @param i_j_k  The coordinates of the wanted field
- * @param mi_mj  The additionnal sizes of dimensions X and Y.
+ * @param mi_mj  The additional sizes of dimensions X and Y.
  * @return The index in a 1D array
 */
 static inline size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_t mi, size_t mj)
@@ -814,7 +813,7 @@ double calculate_H_energy(Parameters *p)
  * @param pValidationFields The containers for the validation fields
  * @param timer The time of the simulation (in seconds)
 */
-void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFields, double time_counter)
+void update_validation_fields(Parameters *p, Fields *pValidationFields, double time_counter)
 {
     double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->height, 2) + pow(PI / p->length, 2)) / PI;
     //printf("fmnl: %0.20f \n", f_mnl);
@@ -853,7 +852,7 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFie
     aggregate_E_field(p, vEy, pValidationFields->Ey, 1, 0, 1);
     aggregate_H_field(p, vHx, pValidationFields->Hx, 1, 0, 0);
     aggregate_H_field(p, vHz, pValidationFields->Hz, 0, 0, 1);
-
+    /*
     vEy = pValidationFields->Ey;
     vHx = pValidationFields->Hx;
     vHz = pValidationFields->Hz;
@@ -864,21 +863,9 @@ void update_validation_fields_then_subfdtd(Parameters *p, Fields *pValidationFie
                 vEy[idx(p, i, j, k, 0, 0)] -= p->mean->Ey[idx(p, i, j, k, 0, 0)];
                 vHx[idx(p, i, j, k, 0, 0)] -= p->mean->Hx[idx(p, i, j, k, 0, 0)];
                 vHz[idx(p, i, j, k, 0, 0)] -= p->mean->Hz[idx(p, i, j, k, 0, 0)];
-            }
+            }*/
 }
 
-
-double calculate_e_y_error(Parameters *p, Fields *pValidationFields){
-
-double ey_error=0.0;
-for (size_t k = 0; k < p->maxk; ++k)
-        for (size_t j = 0; j < p->maxj; ++j)
-            for (size_t i = 0; i < p->maxi; ++i)
-            {
-                ey_error += pValidationFields->Ey[kEy(p,i,j,k)];
-            }
-return ey_error;
-}
 /** 
  * @brief Sets the source in computation mode
  * @param p The parameters of the simulation
@@ -892,14 +879,14 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     double *Hx = pFields->Hx;
     double *Hy = pFields->Hy;
 
-    double aprime = 0.005;
-    double bprime = 0.005;
+    const double a_prime = 0.005;
+    const double b_prime = 0.005;
 
-    double min_y = p->width / 2. - aprime / 2.;
-    double max_y = min_y + aprime;
+    double min_y = p->width / 2. - a_prime / 2.;
+    double max_y = min_y + a_prime;
 
-    double min_x = p->length / 2. - bprime / 2.;
-    double max_x = min_x + bprime;
+    double min_x = p->length / 2. - b_prime / 2.;
+    double max_x = min_x + b_prime;
 
     double min_j = (int)(min_y / p->spatial_step) - 1;
     double max_j = (int)(max_y / p->spatial_step) + 1;
@@ -920,11 +907,54 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     for (j = min_j, shift_j = 0; j < max_j; ++j, ++shift_j)
         for (i = min_i, shift_i = 0; i < max_i; ++i, ++shift_i)
         {
-            Ey[kEy(p, i, j, 1)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime); // i = 0 pour face x =0 // -aprime??
+            Ey[kEy(p, i, j, 1)] = sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / a_prime); // i = 0 pour face x =0 // -a_prime??
             Ex[kEx(p, i, j, 1)] = 0;
             Hy[kHy(p, i, j, 1)] = 0;
-            Hx[kHx(p, i, j, 1)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / aprime);
+            Hx[kHx(p, i, j, 1)] = -(1.0 / Z_te) * sin(2 * PI * f * time_counter) * sin(PI * (shift_i * p->spatial_step) / a_prime);
         }
+}
+
+/**
+ * @brief Computes the normalized mean square error of the simulation compared to the analytical solution
+ * @param p    The parameters of the simulation containing the mean aggregation of simulated fields
+ * @param v    The validation fields
+ */
+void norm_mse(Parameters *p, Fields *v, double timer)
+{
+    double *vEy = v->Ey;
+    double *vHx = v->Hx;
+    double *vHz = v->Hz;
+
+    double Er_Ey_num = 0.0;
+    double Er_Ey_div = 0.0;
+    double Er_Hx_num = 0.0;
+    double Er_Hx_div = 0.0;
+    double Er_Hz_num = 0.0;
+    double Er_Hz_div = 0.0;
+
+    size_t k, j, i;
+    for (k = 0; k < p->maxk; ++k)
+        for (j = 0; j < p->maxj; ++j)
+            for (i = 0; i < p->maxi; ++i)
+            {
+                Er_Ey_num += pow(p->mean->Ey[idx(p, i, j, k, 0, 0)] - vEy[idx(p, i, j, k, 0, 0)], 2.0);
+                Er_Ey_div += pow(vEy[idx(p, i, j, k, 0, 0)], 2.0);
+                Er_Hx_num += pow(p->mean->Hx[idx(p, i, j, k, 0, 0)] - vHx[idx(p, i, j, k, 0, 0)], 2.0);
+                Er_Hx_div += pow(vHx[idx(p, i, j, k, 0, 0)], 2.0);
+                Er_Hz_num += pow(p->mean->Hz[idx(p, i, j, k, 0, 0)] - vHz[idx(p, i, j, k, 0, 0)], 2.0);
+                Er_Hz_div += pow(vHz[idx(p, i, j, k, 0, 0)], 2.0);
+            }
+
+    FILE *csv;
+    csv = fopen("normalized_mse.csv", "a");
+    if (csv == NULL)
+        fail(p->ls, "Cannot open file normalized_mse.csv");
+
+    fprintf(csv, "Ey,%.20lf,%.20lf\n", Er_Ey_num / Er_Ey_div, timer);
+    fprintf(csv, "Hx,%.20lf,%.20lf\n", Er_Hx_num / Er_Hx_div, timer);
+    fprintf(csv, "Hz,%.20lf,%.20lf\n", Er_Hz_num / Er_Hz_div, timer);
+
+    fclose(csv);
 }
 
 /** 
@@ -1050,7 +1080,7 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
         total_energy = calculate_E_energy(pParams) + calculate_H_energy(pParams);
 
         if (pParams->mode == VALIDATION_MODE)
-            update_validation_fields_then_subfdtd(pParams, pValidationFields, 0.0);
+            update_validation_fields(pParams, pValidationFields, 0.0);
 
         write_silo(pValidationFields, pParams, 1);
     }
@@ -1089,11 +1119,13 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
             mean_fields(pParams, joined_fields);
             if (pParams->mode == VALIDATION_MODE)
             {
-                update_validation_fields_then_subfdtd(pParams, pValidationFields, timer);
+                update_validation_fields(pParams, pValidationFields, timer);
                 //printf("Electrical energy: %0.20f \n", calculate_E_energy(pParams));
                 //printf("Magnetic energy: %0.20f \n", calculate_H_energy(pParams));
                 printf("Tot energy: %0.20f \n", calculate_E_energy(pParams) + calculate_H_energy(pParams));
                 printf("Theoretical energy: %0.20f \n", (EPSILON * pParams->length * pParams->width * pParams->height) / 8.);
+
+                norm_mse(pParams, pValidationFields, timer);
                 //assert((calculate_E_energy(pParams) + calculate_H_energy(pParams) - total_energy) <= 0.000001);
             }
 
@@ -1112,7 +1144,7 @@ int main(int argc, char *argv[])
     MPI_Comm_rank(MPI_COMM_WORLD, &rank);
 
     if (rank == 0)
-        printf("Welcome into our microwave oven eletrico-magnetic field simulator! \n");
+        printf("Welcome into our microwave oven electromagnetic field simulator! \n");
 
     if (argc != 2)
         fail(NULL, "This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
