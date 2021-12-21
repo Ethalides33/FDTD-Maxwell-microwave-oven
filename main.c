@@ -40,19 +40,10 @@
 //--------------------------------------------------------------- Data Structures & Type definitions
 //--------------------------------------------------------------------------------------------------
 /// @brief TAGS used for diverse OpenMPI communications
-static const enum TAGS { EX_TAG_TO_UP = 0,
-                         EY_TAG_TO_UP,
-                         EZ_TAG_TO_UP,
-                         HX_TAG_TO_UP,
+static const enum TAGS { HX_TAG_TO_UP,
                          HY_TAG_TO_UP,
-                         HZ_TAG_TO_UP,
                          EX_TAG_TO_DOWN,
                          EY_TAG_TO_DOWN,
-                         EZ_TAG_TO_DOWN,
-                         HX_TAG_TO_DOWN,
-                         HY_TAG_TO_DOWN,
-                         HZ_TAG_TO_DOWN,
-
                          EX_TAG_TO_MAIN,
                          EY_TAG_TO_MAIN,
                          EZ_TAG_TO_MAIN,
@@ -88,34 +79,40 @@ typedef struct fields
 /// @brief Parameters of the simulation
 typedef struct parameters
 {
-    float width;                // a, x in figure (y, in paper cs)
-    float height;               // b, y in figure (z, in paper cs)
-    float length;               // d, z in figure (x, in paper cs)
-    size_t maxi;                // Number of grid subdivisions (x dimension)
-    size_t maxj;                // Number of grid subdivisions (y dimension)
-    size_t maxk;                // Number of grid subdivisions (z dimension)
-    double spatial_step;        // delta x = delta y = delta z
-    double time_step;           // delta t
-    float simulation_time;      // interval of time simulated (in seconds)
+    double width;  // a, x in figure (y, in yee paper cs)
+    double height; // b, y in figure (z, in yee paper cs)
+    double length; // d, z in figure (x, in yee paper cs)
+
+    size_t Nx; // Number of grid subdivisions (x dimension)
+    size_t Ny; // Number of grid subdivisions (y dimension)
+    size_t Nz; // Number of grid subdivisions (z dimension)
+
+    double spatial_step; // delta x = delta y = delta z
+    double time_step;    // delta t
+
+    double simulation_time;     // interval of time simulated (in seconds)
     unsigned int sampling_rate; // rate at which data is printed to file (in #steps)
-    int mode;                   // 0 for validation mode, 1 for computation
+    unsigned int mode;          // 0 for validation mode, 1 for computation
 
     // Mesh directly derived from parameters above and useless to recompute at each timestep
-    int *dims;                 // Array of the sizes of each dimension (maxi+1, maxj+1, maxk+1)
-    int *vdims;                // Array of the sizes of each dimension for variables (maxi, maxj, mak)
-    double **coords;           // Coordinates of each mesh point (grid)
+    // (only for process with rank == 0)
+    int *dims;       // Array of the sizes of each dimension for the mesh {Nx+1, Ny+1, Nz+1}
+    int *vdims;      // Array of the sizes of each dimension for variables {Nx, Ny, mak}
+    double **coords; // Coordinates of each mesh point (grid)
+
     Fields *mean;              // Mean fields
-    Fields *validation_fields; // Validation fields
+    Fields *validation_fields; // Raw validation fields
+
+    size_t *start_k_of_rank; // The starting k of each process
 
     // Parallelization stuff
-    int rank;                // The rank of the current process
-    int ranks;               // The number of ranks, aka. MPI_Comm_size
-    size_t startk;           // The index of the first rank treated by the current rank
-    size_t k_layers;         // The number of layers on the (X,Y) plane treated by current rank
-    int lower_cpu;           // The rank of the process working on the plane below (Z-1)
-    int upper_cpu;           // The rank of the CPU working on the plane above (Z+1)
-    size_t *start_k_of_rank; // The starting k of each process
-    ChainedAllocated *ls;    // The chained list of allocated objects by this process
+    int rank;             // The rank of the current process
+    int ranks;            // The number of ranks, aka. MPI_Comm_size
+    size_t startk;        // The index of the first XY plane treated by the current process
+    size_t k_layers;      // The number of XY planes treated by current process
+    int lower_cpu;        // The rank of the process working on the plane below (Z-1)
+    int upper_cpu;        // The rank of the CPU working on the plane above (Z+1)
+    ChainedAllocated *ls; // The chained list of allocated objects by this process
 } Parameters;
 
 //--------------------------------------------------------------------------------------------------
@@ -160,8 +157,9 @@ void fail(ChainedAllocated *ls, const char *msg)
  * @param pLs A pointer to the pointer of the list of allocated objects.
  * @note In addition to critically check if the malloc properly worked,
  *       this function stores the reference to the new allocated object
- *       in the superglobal chained list which is then used to free the
- *       memory before exit.
+ *       in the chained list which is then used to free the memory before
+ *       exit. A pointer to the pointer is used as the pointer will be
+ *       modified.
 */
 void *Malloc(ChainedAllocated **pLs, size_t size)
 {
@@ -186,7 +184,7 @@ void *Malloc(ChainedAllocated **pLs, size_t size)
     ls->ptr = ptr;
 
     if (!ptr)
-        fail(ls, "CRITICAL ERROR: Could not allocate enough memory!");
+        fail(ls, "CRITICAL ERROR: Could not allocate enough memory!\n");
 
     return ptr;
 }
@@ -209,7 +207,7 @@ double *Malloc_Double(ChainedAllocated **pLs, size_t len)
  * @param ls The pointer to the chained list of pointers
  * @note It's better to never need that!
 */
-static void printHeap(ChainedAllocated *ls)
+static void print_heap(ChainedAllocated *ls)
 {
     printf("==== Heap addresses dump ==== \n");
     for (; ls; ls = ls->previous)
@@ -219,7 +217,7 @@ static void printHeap(ChainedAllocated *ls)
 
 /**
  * @brief Frees the memory and removes the entry from the chained list.
- * @pre ptr was allocated with the @ref Malloc function above.
+ * @pre ptr was allocated with the Malloc function above.
  * @param ls   A pointer to the list containing the allocated objects
  * @param ptr  The pointer to the object to free
 */
@@ -249,43 +247,53 @@ void Free(ChainedAllocated **pLs, void *ptr)
 }
 
 /**
- * @brief Loads the parameters into the system memory.
+ * @brief Loads the parameters of the simulation into the system memory.
  * @param filename The file containing the parameters properties (.txt)
+ * @param rank  The rank of current process
  * @return A pointer to the Parameters struct loaded in system memory
  * @note In parallel mode, this also sets the state of the process.
 */
-Parameters *load_parameters(const char *filename)
+Parameters *load_parameters(const char *filename, int rank)
 {
     FILE *fParams = fopen(filename, "r");
+    if (!fParams)
+        fail(NULL, "Unable to open parameters file!\n");
+
     ChainedAllocated *ls = NULL;
     Parameters *pParameters = Malloc(&ls, sizeof(Parameters));
 
-    if (!fParams)
-        fail(ls, "Unable to open parameters file!");
-
-    fscanf(fParams, "%f", &pParameters->length);
-    fscanf(fParams, "%f", &pParameters->width);
-    fscanf(fParams, "%f", &pParameters->height);
-    fscanf(fParams, "%lf", &pParameters->spatial_step);
-    fscanf(fParams, "%lf", &pParameters->time_step);
-    fscanf(fParams, "%f", &pParameters->simulation_time);
-    fscanf(fParams, "%u", &pParameters->sampling_rate);
-    fscanf(fParams, "%x", &pParameters->mode);
+    if (fscanf(fParams, "%lf\n", &pParameters->length) != 1)
+        fail(ls, "Bad parameters file! Cannot parse length. Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->width) != 1)
+        fail(ls, "Bad parameters file! Cannot parse width. Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->height) != 1)
+        fail(ls, "Bad parameters file! Cannot parse height. Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->spatial_step) != 1)
+        fail(ls, "Bad parameters file! Cannot parse spatial delta. Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->time_step) != 1)
+        fail(ls, "Bad parameters file! Cannot parse time delta. Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->simulation_time) != 1)
+        fail(ls, "Bad parameters file! Cannot parse simulation time. Abort.\n");
+    if (fscanf(fParams, "%u\n", &pParameters->sampling_rate) != 1)
+        fail(ls, "Bad parameters file! Cannot parse sampling rate (unsigned integer needed). Abort.\n");
+    if (fscanf(fParams, "%u\n", &pParameters->mode) != 1 || (pParameters->mode != 0 && pParameters->mode != 1))
+        fail(ls, "Bad parameters file! Cannot parse execution mode. Abort.\n");
 
     fclose(fParams);
 
-    pParameters->maxi = (size_t)(pParameters->length / pParameters->spatial_step);
-    pParameters->maxj = (size_t)(pParameters->width / pParameters->spatial_step);
-    pParameters->maxk = (size_t)(pParameters->height / pParameters->spatial_step);
+    pParameters->Nx = (size_t)(pParameters->length / pParameters->spatial_step);
+    pParameters->Ny = (size_t)(pParameters->width / pParameters->spatial_step);
+    pParameters->Nz = (size_t)(pParameters->height / pParameters->spatial_step);
 
     // Parallelization:
-    MPI_Comm_size(MPI_COMM_WORLD, &pParameters->ranks);
-    MPI_Comm_rank(MPI_COMM_WORLD, &pParameters->rank);
+    pParameters->rank = rank;
+    if (MPI_Comm_size(MPI_COMM_WORLD, &pParameters->ranks) != MPI_SUCCESS)
+        fail(ls, "Could not get MPI communicator size. Abort.\n");
 
     // Solution to equally divide the workload between processes
     // Found on Stackoverflow: https://stackoverflow.com/a/26554699
-    size_t count = pParameters->maxk / pParameters->ranks;
-    size_t remainder = pParameters->maxk % pParameters->ranks;
+    size_t count = pParameters->Nz / pParameters->ranks;
+    size_t remainder = pParameters->Nz % pParameters->ranks;
     size_t stop;
 
     if (pParameters->rank < remainder)
@@ -307,7 +315,9 @@ Parameters *load_parameters(const char *filename)
     // Gather all the start_k in an array of process 0
     if (pParameters->rank == 0)
         pParameters->start_k_of_rank = Malloc(&ls, pParameters->ranks * sizeof(size_t));
-    MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD);
+
+    if (MPI_Gather(&pParameters->startk, 1, MPI_UNSIGNED_LONG, pParameters->start_k_of_rank, 1, MPI_UNSIGNED_LONG, 0, MPI_COMM_WORLD) != MPI_SUCCESS)
+        fail(ls, "Could not gather the starting index of each process. Abort.\n");
 
     pParameters->lower_cpu = pParameters->rank > 0 ? pParameters->rank - 1 : MPI_PROC_NULL;
     pParameters->upper_cpu = pParameters->rank < pParameters->ranks - 1 ? pParameters->rank + 1 : MPI_PROC_NULL;
@@ -324,26 +334,27 @@ void *compute_oven(Parameters *params)
 {
     params->dims = Malloc(&params->ls, sizeof(size_t) * 3);
     params->vdims = Malloc(&params->ls, sizeof(size_t) * 3);
-    params->coords = Malloc(&params->ls, sizeof(double **) * 3);
-    params->dims[0] = params->maxi + 1;
-    params->dims[1] = params->maxj + 1;
-    params->dims[2] = params->maxk + 1;
-    params->vdims[0] = params->maxi;
-    params->vdims[1] = params->maxj;
-    params->vdims[2] = params->maxk;
+    params->coords = Malloc(&params->ls, sizeof(double *) * 3);
+    params->dims[0] = params->Nx + 1;
+    params->dims[1] = params->Ny + 1;
+    params->dims[2] = params->Nz + 1;
+    params->vdims[0] = params->Nx;
+    params->vdims[1] = params->Ny;
+    params->vdims[2] = params->Nz;
 
-    double *x = Malloc(&params->ls, (params->maxi + 1) * sizeof(double));
-    double *y = Malloc(&params->ls, (params->maxj + 1) * sizeof(double));
-    double *z = Malloc(&params->ls, (params->maxk + 1) * sizeof(double));
+    double *x = Malloc(&params->ls, (params->Nx + 1) * sizeof(double));
+    double *y = Malloc(&params->ls, (params->Ny + 1) * sizeof(double));
+    double *z = Malloc(&params->ls, (params->Nz + 1) * sizeof(double));
 
     double dx = params->spatial_step;
-    for (int i = 0; i < params->maxi + 1; ++i)
+    size_t i;
+    for (i = 0; i < params->Nx + 1; ++i)
         x[i] = i * dx;
 
-    for (int i = 0; i < params->maxj + 1; ++i)
+    for (i = 0; i < params->Ny + 1; ++i)
         y[i] = i * dx;
 
-    for (int i = 0; i < params->maxk + 1; ++i)
+    for (i = 0; i < params->Nz + 1; ++i)
         z[i] = i * dx;
 
     double *cords[] = {x, y, z};
@@ -363,22 +374,22 @@ void *compute_oven(Parameters *params)
 size_t sizeof_XY(Parameters *p, Fields *fields, double *field)
 {
     if (field == fields->Ex)
-        return p->maxi * (p->maxj + 1);
+        return p->Nx * (p->Ny + 1);
     if (field == fields->Ey)
-        return (p->maxi + 1) * p->maxj;
+        return (p->Nx + 1) * p->Ny;
     if (field == fields->Ez)
-        return (p->maxi + 1) * (p->maxj + 1);
+        return (p->Nx + 1) * (p->Ny + 1);
     if (field == fields->Hx)
-        return (p->maxi + 1) * p->maxj;
+        return (p->Nx + 1) * p->Ny;
     if (field == fields->Hy)
-        return p->maxi * (p->maxj + 1);
-    if (field == fields->Hz)
-        return p->maxi * p->maxj;
-    return 0;
+        return p->Nx * (p->Ny + 1);
+
+    assert(field == fields->Hz);
+    return p->Nx * p->Ny;
 }
 
 /**
- * @brief Allocates and initialize to 0.0 all the components of each field
+ * @brief Allocates and initialize to 0.0 all the components of each simulation field
  * @param params The parameters of the simulation
  * @return A pointer to the allocated Field struct and all its fields
 */
@@ -387,27 +398,27 @@ static Fields *initialize_fields(Parameters *params)
     Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
-    size_t len = params->maxi * (params->maxj + 1) * (params->maxk + 1);
+    size_t len = params->Nx * (params->Ny + 1) * (params->Nz + 1);
     pFields->Ex = Malloc_Double(&params->ls, len);
 
     // Ey
-    len = (params->maxi + 1) * params->maxj * (params->maxk + 1);
+    len = (params->Nx + 1) * params->Ny * (params->Nz + 1);
     pFields->Ey = Malloc_Double(&params->ls, len);
 
     // Ez
-    len = (params->maxi + 1) * (params->maxj + 1) * params->maxk;
+    len = (params->Nx + 1) * (params->Ny + 1) * params->Nz;
     pFields->Ez = Malloc_Double(&params->ls, len);
 
     // Hx
-    len = (params->maxi + 1) * params->maxj * params->maxk;
+    len = (params->Nx + 1) * params->Ny * params->Nz;
     pFields->Hx = Malloc_Double(&params->ls, len);
 
     // Hy
-    len = params->maxi * (params->maxj + 1) * params->maxk;
+    len = params->Nx * (params->Ny + 1) * params->Nz;
     pFields->Hy = Malloc_Double(&params->ls, len);
 
     // Hz
-    len = params->maxi * params->maxj * (params->maxk + 1);
+    len = params->Nx * params->Ny * (params->Nz + 1);
     pFields->Hz = Malloc_Double(&params->ls, len);
 
     return pFields;
@@ -422,7 +433,7 @@ static Fields *initialize_mean_fields(Parameters *params)
 {
     Fields *f = Malloc(&params->ls, sizeof(Fields));
 
-    size_t len = params->maxi * params->maxj * params->maxk + 1;
+    size_t len = params->Nx * params->Ny * params->Nz + 1;
     f->Ex = Malloc_Double(&params->ls, len);
     f->Ey = Malloc_Double(&params->ls, len);
     f->Ez = Malloc_Double(&params->ls, len);
@@ -434,7 +445,7 @@ static Fields *initialize_mean_fields(Parameters *params)
 }
 
 /**
- * @brief Allocates and initialize to 0.0 all the components of each field for this rank [MPI]
+ * @brief Allocates and initialize to 0.0 all the components of each field for this process [MPI]
  * @param params The parameters of the simulation
 */
 Fields *initialize_cpu_fields(Parameters *params)
@@ -442,27 +453,27 @@ Fields *initialize_cpu_fields(Parameters *params)
     Fields *pFields = Malloc(&params->ls, sizeof(Fields));
 
     // Ex
-    size_t len = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
+    size_t len = params->Nx * (params->Ny + 1) * (params->k_layers + 2);
     pFields->Ex = Malloc_Double(&params->ls, len);
 
     // Ey
-    len = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
+    len = (params->Nx + 1) * params->Ny * (params->k_layers + 2);
     pFields->Ey = Malloc_Double(&params->ls, len);
 
     // Ez
-    len = (params->maxi + 1) * (params->maxj + 1) * (params->k_layers + 2);
+    len = (params->Nx + 1) * (params->Ny + 1) * (params->k_layers + 2);
     pFields->Ez = Malloc_Double(&params->ls, len);
 
     // Hx
-    len = (params->maxi + 1) * params->maxj * (params->k_layers + 2);
+    len = (params->Nx + 1) * params->Ny * (params->k_layers + 2);
     pFields->Hx = Malloc_Double(&params->ls, len);
 
     // Hy
-    len = params->maxi * (params->maxj + 1) * (params->k_layers + 2);
+    len = params->Nx * (params->Ny + 1) * (params->k_layers + 2);
     pFields->Hy = Malloc_Double(&params->ls, len);
 
     // Hz
-    len = params->maxi * params->maxj * (params->k_layers + 2);
+    len = params->Nx * params->Ny * (params->k_layers + 2);
     pFields->Hz = Malloc_Double(&params->ls, len);
 
     return pFields;
@@ -477,7 +488,7 @@ Fields *initialize_cpu_fields(Parameters *params)
 */
 static inline size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_t mi, size_t mj)
 {
-    return i + j * (params->maxi + mi) + k * (params->maxi + mi) * (params->maxj + mj);
+    return i + j * (params->Nx + mi) + k * (params->Nx + mi) * (params->Ny + mj);
 }
 
 /**
@@ -488,7 +499,7 @@ static inline size_t idx(Parameters *params, size_t i, size_t j, size_t k, size_
 */
 static inline size_t kEx(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return i + j * p->maxi + k * p->maxi * (p->maxj + 1);
+    return i + j * p->Nx + k * p->Nx * (p->Ny + 1);
 }
 
 /**
@@ -499,7 +510,7 @@ static inline size_t kEx(Parameters *p, size_t i, size_t j, size_t k)
 */
 static inline size_t kEy(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return i + j * (p->maxi + 1) + k * (p->maxi + 1) * p->maxj;
+    return i + j * (p->Nx + 1) + k * (p->Nx + 1) * p->Ny;
 }
 
 /**
@@ -510,7 +521,7 @@ static inline size_t kEy(Parameters *p, size_t i, size_t j, size_t k)
 */
 static inline size_t kEz(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return i + j * (p->maxi + 1) + k * (p->maxi + 1) * (p->maxj + 1);
+    return i + j * (p->Nx + 1) + k * (p->Nx + 1) * (p->Ny + 1);
 }
 
 /**
@@ -521,7 +532,7 @@ static inline size_t kEz(Parameters *p, size_t i, size_t j, size_t k)
 */
 static inline size_t kHx(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return i + j * (p->maxi + 1) + k * (p->maxi + 1) * p->maxj;
+    return i + j * (p->Nx + 1) + k * (p->Nx + 1) * p->Ny;
 }
 
 /**
@@ -532,7 +543,7 @@ static inline size_t kHx(Parameters *p, size_t i, size_t j, size_t k)
 */
 static inline size_t kHy(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return i + j * p->maxi + k * p->maxi * (p->maxj + 1);
+    return i + j * p->Nx + k * p->Nx * (p->Ny + 1);
 }
 
 /**
@@ -543,7 +554,7 @@ static inline size_t kHy(Parameters *p, size_t i, size_t j, size_t k)
 */
 static inline size_t kHz(Parameters *p, size_t i, size_t j, size_t k)
 {
-    return i + (j + k * p->maxj) * p->maxi;
+    return i + (j + k * p->Ny) * p->Nx;
 }
 
 /**
@@ -555,8 +566,8 @@ void set_initial_conditions(double *Ey, Parameters *p)
 {
     size_t i, j, k;
     for (k = 1; k < p->k_layers + 2; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi + 1; ++i)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx + 1; ++i)
                 Ey[kEy(p, i, j, k)] = sin(PI * (p->startk + k - 1) * p->spatial_step / p->height) *
                                       sin(PI * i * p->spatial_step / p->length);
 }
@@ -568,7 +579,7 @@ void set_initial_conditions(double *Ey, Parameters *p)
 */
 void update_H_field(Parameters *p, Fields *fields)
 {
-    // Shortcuts to avoid pointers exploration in the loop.
+    // Shortcuts to avoid pointers exploration in the loops.
     double *Ex = fields->Ex;
     double *Ey = fields->Ey;
     double *Ez = fields->Ez;
@@ -581,22 +592,22 @@ void update_H_field(Parameters *p, Fields *fields)
     size_t i, j, k;
 
     for (k = 1; k < p->k_layers + 1; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi + 1; ++i)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx + 1; ++i)
                 Hx[kHx(p, i, j, k)] += factor * ((Ey[kEy(p, i, j, k + 1)] - Ey[kEy(p, i, j, k)]) -
                                                  (Ez[kEz(p, i, j + 1, k)] - Ez[kEz(p, i, j, k)]));
 
     for (k = 1; k < p->k_layers + 1; ++k)
-        for (j = 0; j < p->maxj + 1; ++j)
-            for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->Ny + 1; ++j)
+            for (i = 0; i < p->Nx; ++i)
                 Hy[kHy(p, i, j, k)] += factor * ((Ez[kEz(p, i + 1, j, k)] - Ez[kEz(p, i, j, k)]) -
                                                  (Ex[kEx(p, i, j, k + 1)] - Ex[kEx(p, i, j, k)]));
 
     size_t ofst = p->rank == p->ranks - 1 ? 2 : 1;
     ofst += p->k_layers;
     for (k = 1; k < ofst; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi; ++i)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx; ++i)
                 Hz[kHz(p, i, j, k)] += factor * ((Ex[kEx(p, i, j + 1, k)] - Ex[kEx(p, i, j, k)]) -
                                                  (Ey[kEy(p, i + 1, j, k)] - Ey[kEy(p, i, j, k)]));
 }
@@ -622,39 +633,40 @@ void update_E_field(Parameters *p, Fields *fields)
 
     size_t startk = p->rank == 0 ? 2 : 1;
     for (k = startk; k < p->k_layers + 1; ++k)
-        for (j = 1; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi; ++i)
+        for (j = 1; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx; ++i)
                 Ex[kEx(p, i, j, k)] += factor * ((Hz[kHz(p, i, j, k)] - Hz[kHz(p, i, j - 1, k)]) -
                                                  (Hy[kHy(p, i, j, k)] - Hy[kHy(p, i, j, k - 1)]));
 
     for (k = startk; k < p->k_layers + 1; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 1; i < p->maxi; ++i)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 1; i < p->Nx; ++i)
                 Ey[kEy(p, i, j, k)] += factor * ((Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j, k - 1)]) -
                                                  (Hz[kHz(p, i, j, k)] - Hz[kHz(p, i - 1, j, k)]));
 
     for (k = 1; k < p->k_layers + 1; ++k)
-        for (j = 1; j < p->maxj; ++j)
-            for (i = 1; i < p->maxi; ++i)
+        for (j = 1; j < p->Ny; ++j)
+            for (i = 1; i < p->Nx; ++i)
                 Ez[kEz(p, i, j, k)] += factor * ((Hy[kHy(p, i, j, k)] - Hy[kHy(p, i - 1, j, k)]) -
                                                  (Hx[kHx(p, i, j, k)] - Hx[kHx(p, i, j - 1, k)]));
 }
 
 /**
- * @brief Computes the mean of an electrical field for dump to silo
+ * @brief Computes the mean of an electrical field
  * @param p   The simulation parameters
  * @param Ef  The E field component in one direction
- * @param r   The result aggregated vector of size (maxi, maxj, maxk)
- * @param ofi The offset in X (related to the space size)
- * @param ofj The offset in Y (related to the space size)
- * @param ofk The offset in Z (related to the space size)
+ * @param r   The result aggregated vector of size Nx * Ny * Nz
+ * @param ofi [0 or 1] The offset in X (related to the space size)
+ * @param ofj [0 or 1] The offset in Y (related to the space size)
+ * @param ofk [0 or 1] The offset in Z (related to the space size)
 */
 void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t ofj, size_t ofk)
 {
+    size_t i, j, k;
     size_t t = 0;
-    for (size_t k = 0; k < p->maxk; ++k)
-        for (size_t j = 0; j < p->maxj; ++j)
-            for (size_t i = 0; i < p->maxi; ++i)
+    for (k = 0; k < p->Nz; ++k)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx; ++i)
                 r[t++] = .25 * (Ef[idx(p, i, j, k, ofi, ofj)] +
                                 Ef[idx(p, i + ofi, j + ofj, k + ofk, ofi, ofj)] +
                                 Ef[idx(p, i, j + ofj, k + ofk, ofi, ofj)] +
@@ -665,17 +677,18 @@ void aggregate_E_field(Parameters *p, double *Ef, double *r, size_t ofi, size_t 
  * @brief Computes the mean of an magnetic field 
  * @param p   The simulation parameters
  * @param Hf  The H field component in one direction
- * @param r   The result aggregated vector of size (maxi, maxj, maxk)
- * @param ofi The offset in X (related to the space size)
- * @param ofj The offset in Y (related to the space size)
- * @param ofk The offset in Z (related to the space size)
+ * @param r   The result aggregated vector of size (Nx, Ny, Nz)
+ * @param ofi [0 or 1] The offset in X (related to the space size)
+ * @param ofj [0 or 1] The offset in Y (related to the space size)
+ * @param ofk [0 or 1] The offset in Z (related to the space size)
 */
 void aggregate_H_field(Parameters *p, double *Hf, double *r, size_t ofi, size_t ofj, size_t ofk)
 {
+    size_t i, j, k;
     size_t t = 0;
-    for (size_t k = 0; k < p->maxk; ++k)
-        for (size_t j = 0; j < p->maxj; ++j)
-            for (size_t i = 0; i < p->maxi; ++i)
+    for (k = 0; k < p->Nz; ++k)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx; ++i)
                 r[t++] = .5 * (Hf[idx(p, i, j, k, ofi, ofj)] +
                                Hf[idx(p, i + ofi, j + ofj, k + ofk, ofi, ofj)]);
 }
@@ -755,9 +768,9 @@ double calculate_E_energy(Parameters *p)
 
     size_t i, j, k;
 
-    for (k = 0; k < p->maxk; k++)
-        for (j = 0; j < p->maxj; j++)
-            for (i = 0; i < p->maxi; i++)
+    for (k = 0; k < p->Nz; ++k)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx; ++i)
             {
                 ex_energy += pow(Ex[idx(p, i, j, k, 0, 0)], 2);
                 ey_energy += pow(Ey[idx(p, i, j, k, 0, 0)], 2);
@@ -790,9 +803,9 @@ double calculate_H_energy(Parameters *p)
 
     size_t i, j, k;
 
-    for (k = 0; k < p->maxk; k++)
-        for (j = 0; j < p->maxj; j++)
-            for (i = 0; i < p->maxi; i++)
+    for (k = 0; k < p->Nz; k++)
+        for (j = 0; j < p->Ny; j++)
+            for (i = 0; i < p->Nx; i++)
             {
                 hx_energy += pow(Hx[idx(p, i, j, k, 0, 0)], 2);
                 hy_energy += pow(Hy[idx(p, i, j, k, 0, 0)], 2);
@@ -808,9 +821,9 @@ double calculate_H_energy(Parameters *p)
 }
 
 /**
- * @brief Updates the validation fields and substract the simulated fields to see the difference easier
- * @param p  The parameters of the simulation that contains the mean of sim. fields
- * @param pValidationFields The containers for the validation fields
+ * @brief Updates the validation fields and aggregate them into the second parameter
+ * @param p  The parameters of the simulation that contains an allocated array for validation fields
+ * @param pValidationFields The containers for the mean of the validation fields
  * @param timer The time of the simulation (in seconds)
 */
 void update_validation_fields(Parameters *p, Fields *pValidationFields, double time_counter)
@@ -821,28 +834,27 @@ void update_validation_fields(Parameters *p, Fields *pValidationFields, double t
     double Z_te = (omega * MU) / sqrt(pow(omega, 2) * MU * EPSILON - pow(PI / p->length, 2));
     //printf("Zte: %0.20f \n", Z_te);
     //printf("frequency: %0.10f \n", f_mnl);
-    //printf("z_te: %0.10f \n", Z_te);
 
     double *vEy = p->validation_fields->Ey;
     double *vHx = p->validation_fields->Hx;
     double *vHz = p->validation_fields->Hz;
 
     size_t i, j, k;
-    for (k = 0; k < p->maxk + 1; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi + 1; ++i)
+    for (k = 0; k < p->Nz + 1; ++k)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx + 1; ++i)
             {
                 vEy[kEy(p, i, j, k)] = (cos(2 * PI * f_mnl * time_counter) *
                                         sin(PI * i * p->spatial_step / p->length) *
                                         sin(PI * k * p->spatial_step / p->height));
 
-                if (k != p->maxk)
+                if (k != p->Nz)
                     vHx[kHx(p, i, j, k)] = ((1.0 / Z_te) *
                                             sin(2 * PI * f_mnl * time_counter) *
                                             sin(PI * i * p->spatial_step / p->length) *
                                             cos(PI * k * p->spatial_step / p->height));
 
-                if (i != p->maxi)
+                if (i != p->Nx)
                     vHz[kHz(p, i, j, k)] = (-PI / (omega * MU * p->length) *
                                             sin(2 * PI * f_mnl * time_counter) *
                                             cos(PI * i * p->spatial_step / p->length) *
@@ -869,6 +881,7 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 
     const double a_prime = 0.005;
     const double b_prime = 0.005;
+    const double f = 2.45e10;
 
     double min_y = p->width / 2. - a_prime / 2.;
     double max_y = min_y + a_prime;
@@ -881,8 +894,6 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 
     double min_i = (int)(min_x / p->spatial_step) - 1;
     double max_i = (int)(max_x / p->spatial_step) + 1;
-
-    double f = 2.45e10;
 
     double f_mnl = 0.5 * CELERITY * sqrt(pow(PI / p->width, 2) + pow(PI / p->length, 2)) / PI;
     double omega = 2.0 * PI * f_mnl;
@@ -903,9 +914,9 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 }
 
 /**
- * @brief Computes the normalized mean square error of the simulation compared to the analytical solution
+ * @brief Computes the normalized mean square error of the simulation compared to the analytical solution and dumps a csv file entry with multiple variables.
  * @param p    The parameters of the simulation containing the mean aggregation of simulated fields
- * @param v    The validation fields
+ * @param v    The meaned validation fields
  */
 void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
 {
@@ -921,9 +932,9 @@ void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
     double Er_Hz_div = 0.0;
 
     size_t k, j, i;
-    for (k = 0; k < p->maxk; ++k)
-        for (j = 0; j < p->maxj; ++j)
-            for (i = 0; i < p->maxi; ++i)
+    for (k = 0; k < p->Nz; ++k)
+        for (j = 0; j < p->Ny; ++j)
+            for (i = 0; i < p->Nx; ++i)
             {
                 Er_Ey_num += pow(p->mean->Ey[idx(p, i, j, k, 0, 0)] - vEy[idx(p, i, j, k, 0, 0)], 2.0);
                 Er_Ey_div += pow(vEy[idx(p, i, j, k, 0, 0)], 2.0);
@@ -936,7 +947,7 @@ void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
     FILE *csv;
     csv = fopen("data.csv", "a");
     if (csv == NULL)
-        fail(p->ls, "Cannot open file data.csv");
+        fail(p->ls, "Cannot open file data.csv\n");
 
     const double energyE = calculate_E_energy(p);
     const double energyH = calculate_H_energy(p);
@@ -963,37 +974,39 @@ void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
 */
 void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 {
-    //printf("rank in fct: %d \n", p->rank);
+    int r[6];
 
     for (int i = 1; i < p->ranks; ++i)
     {
         size_t k_offset = p->start_k_of_rank[i];
-        MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ex) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ey) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ez) * (p->maxk - k_offset), MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hx) * (p->maxk - k_offset), MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hy) * (p->maxk - k_offset), MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-        MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hz) * (p->maxk + 1 - k_offset), MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        r[0] = MPI_Recv(&join_fields->Ex[kEx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ex) * (p->Nz + 1 - k_offset), MPI_DOUBLE, i, EX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        r[1] = MPI_Recv(&join_fields->Ey[kEy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ey) * (p->Nz + 1 - k_offset), MPI_DOUBLE, i, EY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        r[2] = MPI_Recv(&join_fields->Ez[kEz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Ez) * (p->Nz - k_offset), MPI_DOUBLE, i, EZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        r[3] = MPI_Recv(&join_fields->Hx[kHx(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hx) * (p->Nz - k_offset), MPI_DOUBLE, i, HX_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        r[4] = MPI_Recv(&join_fields->Hy[kHy(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hy) * (p->Nz - k_offset), MPI_DOUBLE, i, HY_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        r[5] = MPI_Recv(&join_fields->Hz[kHz(p, 0, 0, k_offset)], sizeof_XY(p, join_fields, join_fields->Hz) * (p->Nz + 1 - k_offset), MPI_DOUBLE, i, HZ_TAG_TO_MAIN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+        if (r[0] != MPI_SUCCESS || r[1] != MPI_SUCCESS || r[2] != MPI_SUCCESS || r[3] != MPI_SUCCESS || r[4] != MPI_SUCCESS || r[5] != MPI_SUCCESS)
+            fail(p->ls, "An error occurred while receiving the fields of all processes in process with rank 0. Aborting...\n");
     }
 
-    for (int k = 1; k < p->k_layers + 1; k++)
-        for (int j = 0; j < p->maxj + 1; j++)
-            for (int i = 0; i < p->maxi + 1; i++)
+    size_t i, j, k;
+    for (k = 1; k < p->k_layers + 1; ++k)
+        for (j = 0; j < p->Ny + 1; ++j)
+            for (i = 0; i < p->Nx + 1; ++i)
             {
-                //printf("rank: %d \n", p->rank);
-                if (i != p->maxi)
+                if (i != p->Nx)
                 {
                     join_fields->Ex[kEx(p, i, j, k - 1)] = pFields->Ex[kEx(p, i, j, k)];
                     join_fields->Hy[kHy(p, i, j, k - 1)] = pFields->Hy[kHy(p, i, j, k)];
                 }
-                if (j != p->maxj)
+                if (j != p->Ny)
                 {
                     join_fields->Ey[kEy(p, i, j, k - 1)] = pFields->Ey[kEy(p, i, j, k)];
                     join_fields->Hx[kHx(p, i, j, k - 1)] = pFields->Hx[kHx(p, i, j, k)];
                 }
                 join_fields->Ez[kEz(p, i, j, k - 1)] = pFields->Ez[kEz(p, i, j, k)];
 
-                if (j != p->maxj && i != p->maxi)
+                if (j != p->Ny && i != p->Nx)
                     join_fields->Hz[kHz(p, i, j, k - 1)] = pFields->Hz[kHz(p, i, j, k)];
             }
 }
@@ -1006,12 +1019,15 @@ void join_fields(Fields *join_fields, Parameters *p, Fields *pFields)
 */
 void send_fields_to_main(Fields *pFields, Parameters *p)
 {
-    MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ex) * (p->k_layers + 1), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ey) * (p->k_layers + 1), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ez) * (p->k_layers), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hx) * (p->k_layers), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hy) * (p->k_layers), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
-    MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hz) * (p->k_layers + 1), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    int r[6];
+    r[0] = MPI_Send(&pFields->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ex) * (p->k_layers + 1), MPI_DOUBLE, 0, EX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    r[1] = MPI_Send(&pFields->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ey) * (p->k_layers + 1), MPI_DOUBLE, 0, EY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    r[2] = MPI_Send(&pFields->Ez[kEz(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Ez) * (p->k_layers), MPI_DOUBLE, 0, EZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    r[3] = MPI_Send(&pFields->Hx[kHx(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hx) * (p->k_layers), MPI_DOUBLE, 0, HX_TAG_TO_MAIN, MPI_COMM_WORLD);
+    r[4] = MPI_Send(&pFields->Hy[kHy(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hy) * (p->k_layers), MPI_DOUBLE, 0, HY_TAG_TO_MAIN, MPI_COMM_WORLD);
+    r[5] = MPI_Send(&pFields->Hz[kHz(p, 0, 0, 1)], sizeof_XY(p, pFields, pFields->Hz) * (p->k_layers + 1), MPI_DOUBLE, 0, HZ_TAG_TO_MAIN, MPI_COMM_WORLD);
+    if (r[0] != MPI_SUCCESS || r[1] != MPI_SUCCESS || r[2] != MPI_SUCCESS || r[3] != MPI_SUCCESS || r[4] != MPI_SUCCESS || r[5] != MPI_SUCCESS)
+        fail(p->ls, "An error occurred while sending the fields of all processes in process with rank 0. Aborting...\n");
 }
 
 /**
@@ -1022,13 +1038,18 @@ void send_fields_to_main(Fields *pFields, Parameters *p)
 void exchange_E_field(Parameters *p, Fields *f)
 {
     MPI_Request req[2];
-    MPI_Isend(&f->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
-    MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[1]);
+    int r[5];
 
-    MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    r[0] = MPI_Isend(&f->Ex[kEx(p, 0, 0, 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->lower_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, &req[0]);
+    r[1] = MPI_Isend(&f->Ey[kEy(p, 0, 0, 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->lower_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, &req[1]);
 
-    MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
+    r[2] = MPI_Recv(&f->Ey[kEy(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ey), MPI_DOUBLE, p->upper_cpu, EY_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    r[3] = MPI_Recv(&f->Ex[kEx(p, 0, 0, p->k_layers + 1)], sizeof_XY(p, f, f->Ex), MPI_DOUBLE, p->upper_cpu, EX_TAG_TO_DOWN, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    r[4] = MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
+
+    if (r[0] != MPI_SUCCESS || r[1] != MPI_SUCCESS || r[2] != MPI_SUCCESS || r[3] != MPI_SUCCESS || r[4] != MPI_SUCCESS)
+        fail(p->ls, "An error occurred while exchanging E fields between processes. Aborting...\n");
 }
 
 /** 
@@ -1039,13 +1060,17 @@ void exchange_E_field(Parameters *p, Fields *f)
 void exchange_H_field(Parameters *p, Fields *f)
 {
     MPI_Request req[2];
-    MPI_Isend(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, &req[0]);
-    MPI_Isend(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
+    int r[5];
 
-    MPI_Recv(f->Hx, sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-    MPI_Recv(f->Hy, sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    r[0] = MPI_Isend(&f->Hx[kHx(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->upper_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, &req[0]);
+    r[1] = MPI_Isend(&f->Hy[kHy(p, 0, 0, p->k_layers)], sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->upper_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, &req[1]);
 
-    MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
+    r[2] = MPI_Recv(f->Hx, sizeof_XY(p, f, f->Hx), MPI_DOUBLE, p->lower_cpu, HX_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+    r[3] = MPI_Recv(f->Hy, sizeof_XY(p, f, f->Hy), MPI_DOUBLE, p->lower_cpu, HY_TAG_TO_UP, MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+    r[4] = MPI_Waitall(2, req, MPI_STATUSES_IGNORE);
+    if (r[0] != MPI_SUCCESS || r[1] != MPI_SUCCESS || r[2] != MPI_SUCCESS || r[3] != MPI_SUCCESS || r[4] != MPI_SUCCESS)
+        fail(p->ls, "An error occurred while exchanging H fields between processes. Aborting...\n");
 }
 
 /** 
@@ -1067,7 +1092,6 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
         joined_fields = initialize_fields(pParams);
         join_fields(joined_fields, pParams, pFields);
         mean_fields(pParams, joined_fields);
-        total_energy = calculate_E_energy(pParams) + calculate_H_energy(pParams);
 
         if (pParams->mode == VALIDATION_MODE)
             update_validation_fields(pParams, pValidationFields, 0.0);
@@ -1093,21 +1117,24 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
 
         update_E_field(pParams, pFields);
 
-        if (pParams->rank == 0 && joined_fields != NULL)
-            join_fields(joined_fields, pParams, pFields);
-        else
-            send_fields_to_main(pFields, pParams);
-
-        if (pParams->rank == 0 && joined_fields != NULL && iteration % pParams->sampling_rate == 0)
+        if (iteration % pParams->sampling_rate == 0)
         {
-            mean_fields(pParams, joined_fields);
-            if (pParams->mode == VALIDATION_MODE)
+            if (pParams->rank == 0)
             {
-                update_validation_fields(pParams, pValidationFields, timer);
-                norm_mse_dump_csv(pParams, pValidationFields, timer);
-            }
+                assert(joined_fields != NULL);
 
-            write_silo(pValidationFields, pParams, iteration);
+                join_fields(joined_fields, pParams, pFields);
+                mean_fields(pParams, joined_fields);
+                if (pParams->mode == VALIDATION_MODE)
+                {
+                    update_validation_fields(pParams, pValidationFields, timer);
+                    norm_mse_dump_csv(pParams, pValidationFields, timer);
+                }
+
+                write_silo(pValidationFields, pParams, iteration);
+            }
+            else
+                send_fields_to_main(pFields, pParams);
         }
     }
 }
@@ -1117,21 +1144,24 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
 //--------------------------------------------------------------------------------------------------
 int main(int argc, char *argv[])
 {
-    MPI_Init(&argc, &argv);
+    if (MPI_Init(&argc, &argv) != MPI_SUCCESS)
+        fail(NULL, "Could not init MPI. Abort.\n");
+
     int rank;
-    MPI_Comm_rank(MPI_COMM_WORLD, &rank);
+    if (MPI_Comm_rank(MPI_COMM_WORLD, &rank) != MPI_SUCCESS)
+        fail(NULL, "Could not get the rank of current process. Abort.\n");
 
     if (rank == 0)
         printf("Welcome into our microwave oven electromagnetic field simulator! \n");
 
     if (argc != 2)
-        fail(NULL, "This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt");
+        fail(NULL, "This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt\n");
 
     printf("Process %d: Loading the parameters of the simulation...\n", rank);
-    Parameters *pParameters = load_parameters(argv[1]);
+    Parameters *pParameters = load_parameters(argv[1], rank);
 
     if (pParameters->time_step > pParameters->simulation_time)
-        fail(pParameters->ls, "The time step must be lower than the simulation time!");
+        fail(pParameters->ls, "The time step must be smaller than the simulation time!\n");
 
     if (rank == 0)
     {
@@ -1152,12 +1182,13 @@ int main(int argc, char *argv[])
             FILE *csv;
             csv = fopen("data.csv", "w");
             if (csv == NULL)
-                fail(pParameters->ls, "Cannot open file data.csv");
+                fail(pParameters->ls, "Cannot open file data.csv\n");
             fprintf(csv, "timer,NormMSEEy,NormMSEHx,NormMSEHz,EnergyElectric,EnergyMagnetic,EnergyTotal,EnergyTotalTheory\n");
             fclose(csv);
+
             pValidationFields = initialize_mean_fields(pParameters);
             pParameters->validation_fields = initialize_fields(pParameters);
-            printf("Main process: Validation mode activated. \n");
+            printf("Main process: Validation mode activated, you will find lots of data in data.csv. \n");
             // Free what's not needed for validation.
             Free(&(pParameters->ls), pValidationFields->Ex);
             Free(&(pParameters->ls), pValidationFields->Ez);
@@ -1179,6 +1210,8 @@ int main(int argc, char *argv[])
     if (rank == 0)
         printf("Simulation complete!\n");
 
-    MPI_Finalize();
+    if (MPI_Finalize() != MPI_SUCCESS)
+        perror("Something happend with the MPI_Finalize function...\n");
+
     return 0;
 }
