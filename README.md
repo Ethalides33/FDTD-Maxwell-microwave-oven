@@ -2,6 +2,11 @@
 Simulation of EM waves in a microwave oven using the FDTD scheme.
 Based on the article from Kane S. Yee, "Numerical Solution of Initial Boundary Value Problems Involving Maxwell’s Equations in Isotropic Media", 1961.
 
+## Project's structure
+
+This branch is a parallel implementation of the FDTD algorithm. You can find a parallel implementation
+under the branch "parallel".
+
 ## Perequisites
 
 This project uses silo library to dump the computed data.
