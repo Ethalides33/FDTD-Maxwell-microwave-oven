@@ -93,6 +93,7 @@ typedef struct parameters
     double simulation_time;     // interval of time simulated (in seconds)
     unsigned int sampling_rate; // rate at which data is printed to file (in #steps)
     unsigned int mode;          // 0 for validation mode, 1 for computation
+    unsigned int dump_csv;      // 0 for not dumping any csv, 1 to dump the csv file or errors.
 
     // Mesh directly derived from parameters above and useless to recompute at each timestep
     // (only for process with rank == 0)
@@ -284,6 +285,7 @@ Parameters *load_parameters(const char *filename, int rank)
     pParameters->Nx = (size_t)(pParameters->length / pParameters->spatial_step);
     pParameters->Ny = (size_t)(pParameters->width / pParameters->spatial_step);
     pParameters->Nz = (size_t)(pParameters->height / pParameters->spatial_step);
+    pParameters->dump_csv = 0;
 
     // Parallelization:
     pParameters->rank = rank;
@@ -920,6 +922,9 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
  */
 void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
 {
+    if (!p->dump_csv)
+        return;
+
     double *vEy = v->Ey;
     double *vHx = v->Hx;
     double *vHz = v->Hz;
@@ -951,6 +956,11 @@ void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
 
     const double energyE = calculate_E_energy(p);
     const double energyH = calculate_H_energy(p);
+
+    // Floating Division by 0.0 isn't standardized: Most of the times it returns inf.
+    Er_Ey_div = Er_Ey_div == 0.0 ? 1e-300 : Er_Ey_div;
+    Er_Hx_div = Er_Hx_div == 0.0 ? 1e-300 : Er_Hx_div;
+    Er_Hz_div = Er_Hz_div == 0.0 ? 1e-300 : Er_Hz_div;
 
     // fprintf(csv, "timer,NormMSEEy,NormMSEHx,NormMSEHz,EnergyElectric,EnergyMagnetic,EnergyTotal,EnergyTotalTheory\n");
     fprintf(csv, "%.20lf,%.20lf,%.20lf,%.20lf,%.20lf,%.20lf,%.20lf,%.20lf\n",
@@ -1157,10 +1167,11 @@ int main(int argc, char *argv[])
     if (rank == 0)
         printf("Welcome into our microwave oven electromagnetic field simulator! \n");
 
-    if (argc != 2)
-        fail(NULL, "This program needs 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt\n");
+    if (argc < 2)
+        fail(NULL, "This program needs at least 1 argument: the parameters file (.txt). Eg.: ./microwave param.txt\n");
 
     printf("Process %d: Loading the parameters of the simulation...\n", rank);
+
     Parameters *pParameters = load_parameters(argv[1], rank);
 
     if (pParameters->time_step > pParameters->simulation_time)
@@ -1181,17 +1192,25 @@ int main(int argc, char *argv[])
     {
         if (rank == 0)
         {
-            // Prepare the csv file
-            FILE *csv;
-            csv = fopen("data.csv", "w");
-            if (csv == NULL)
-                fail(pParameters->ls, "Cannot open file data.csv\n");
-            fprintf(csv, "timer,NormMSEEy,NormMSEHx,NormMSEHz,EnergyElectric,EnergyMagnetic,EnergyTotal,EnergyTotalTheory\n");
-            fclose(csv);
+
+            if (argc == 3 && strlen(argv[2]) == 10 && strncmp(argv[2], "--dump-csv", 10) == 0)
+            {
+                pParameters->dump_csv = 1;
+                // Prepare the csv file
+                FILE *csv;
+                csv = fopen("data.csv", "w");
+                if (csv == NULL)
+                    fail(pParameters->ls, "Cannot open file data.csv\n");
+                fprintf(csv, "timer,NormMSEEy,NormMSEHx,NormMSEHz,EnergyElectric,EnergyMagnetic,EnergyTotal,EnergyTotalTheory\n");
+                fclose(csv);
+                printf("Main process: Energy and errors will be dumped into data.csv.\n");
+            }
+            else
+                printf("Main process: Did you know? You can use --dump-csv option in order to dump extra information about the simulation into a csv file.\n");
 
             pValidationFields = initialize_mean_fields(pParameters);
             pParameters->validation_fields = initialize_fields(pParameters);
-            printf("Main process: Validation mode activated, you will find lots of data in data.csv. \n");
+            printf("Main process: Validation mode activated. \n");
             // Free what's not needed for validation.
             Free(&(pParameters->ls), pValidationFields->Ex);
             Free(&(pParameters->ls), pValidationFields->Ez);
