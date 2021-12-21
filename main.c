@@ -879,8 +879,8 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
     double *Hx = pFields->Hx;
     double *Hy = pFields->Hy;
 
-    const double a_prime = 0.005;
-    const double b_prime = 0.005;
+    const double a_prime = 0.1;
+    const double b_prime = 0.05;
     const double f = 2.45e10;
 
     double min_y = p->width / 2. - a_prime / 2.;
@@ -1100,7 +1100,9 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
     }
     else
         send_fields_to_main(pFields, pParams);
+
     // Propagation and dumps
+    double start_time = MPI_Wtime();
     for (timer = 0; timer <= pParams->simulation_time; timer += pParams->time_step, iteration++)
     {
         exchange_E_field(pParams, pFields);
@@ -1137,6 +1139,7 @@ static void propagate_fields(Fields *pFields, Fields *pValidationFields, Paramet
                 send_fields_to_main(pFields, pParams);
         }
     }
+    double end_time = MPI_Wtime();
 }
 
 //--------------------------------------------------------------------------------------------------
