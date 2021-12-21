@@ -19,13 +19,13 @@ parallel:
 	mpicc ${SRC} -lm -lsiloh5 -std=c99 -O3 -o ${EXE}
 
 run:
-	mpirun -np 3 -v ${EXE} ./params.txt --dump-csv
+	mpirun -np 6 -v ${EXE} ./params.txt --dump-csv
 
 runnocsv:
-	mpirun -np 3 -v ${EXE} ./params.txt --dump-csv
+	mpirun -np 6 -v ${EXE} ./params.txt
 
 rungdb:
-	mpirun -n 3 xterm -hold -e gdb -ex run --args ${EXE} ./params.txt
+	mpirun -n 6 xterm -hold -e gdb -ex run --args ${EXE} ./params.txt
 
 paralleldbg:
 	make clean

@@ -18,6 +18,8 @@
 #include <assert.h>
 #include <mpi.h>
 #include <omp.h>
+#include <errno.h>
+#include <stdint.h>
 
 // --- Silo constants
 #define DB_FILENAME "r/result%04d.silo"
@@ -35,6 +37,11 @@
 
 // COMPUTATION: The source is set and continuously radiates the simulation box
 #define COMPUTATION_MODE 1
+
+// Preventing Nx/Ny/Nz to be bigger than maximum of size_t
+// Solution adapted from https://stackoverflow.com/a/53988522
+// `double` value 1 past SIZE_MAX:
+#define SIZE_MAX_P1_DOUBLE ((SIZE_MAX / 2 + 1) * 2.0f)
 
 //--------------------------------------------------------------------------------------------------
 //--------------------------------------------------------------- Data Structures & Type definitions
@@ -149,7 +156,12 @@ void fail(ChainedAllocated *ls, const char *msg)
 {
     perror(msg);
     freeAll(ls);
-    MPI_Finalize();
+
+    if (MPI_Abort(MPI_COMM_WORLD, EXIT_FAILURE) != MPI_SUCCESS)
+        perror("MPI_Abort failed. Use CTRL+C or pkill to kill the MPI processes. \n");
+
+    if (MPI_Finalize() != MPI_SUCCESS)
+        perror("Something happend with the MPI_Finalize function...\n");
     exit(EXIT_FAILURE);
 }
 
@@ -248,6 +260,39 @@ void Free(ChainedAllocated **pLs, void *ptr)
 }
 
 /**
+ * @brief Utility to round double to size_t with bounds checking. (for Nx/Ny/Nz)
+ * 
+ * @param dbl The double value
+ * @return size_t The rounded double to size_t
+ */
+size_t double_rounded_to_size_t(double dbl)
+{
+    // In range?
+    if (dbl >= -0.5 && dbl - SIZE_MAX_P1_DOUBLE < -0.5)
+    {
+        size_t sz = (size_t)dbl;
+        double frac = dbl - (double)sz;
+        if (frac > 0.5 || (frac >= 0.5 && sz % 2))
+        {
+            sz++;
+        }
+        return sz;
+    }
+    if (dbl >= 0.0)
+    {
+        errno = ERANGE;
+        return SIZE_MAX; // dbl is too great
+    }
+    if (dbl < 0.0)
+    {
+        errno = ERANGE;
+        return 0; // dbl is too negative
+    }
+    errno = EDOM;
+    return 0; // dbl is not-a-number
+}
+
+/**
  * @brief Loads the parameters of the simulation into the system memory.
  * @param filename The file containing the parameters properties (.txt)
  * @param rank  The rank of current process
@@ -263,28 +308,34 @@ Parameters *load_parameters(const char *filename, int rank)
     ChainedAllocated *ls = NULL;
     Parameters *pParameters = Malloc(&ls, sizeof(Parameters));
 
-    if (fscanf(fParams, "%lf\n", &pParameters->length) != 1)
-        fail(ls, "Bad parameters file! Cannot parse length. Abort.\n");
-    if (fscanf(fParams, "%lf\n", &pParameters->width) != 1)
-        fail(ls, "Bad parameters file! Cannot parse width. Abort.\n");
-    if (fscanf(fParams, "%lf\n", &pParameters->height) != 1)
-        fail(ls, "Bad parameters file! Cannot parse height. Abort.\n");
-    if (fscanf(fParams, "%lf\n", &pParameters->spatial_step) != 1)
-        fail(ls, "Bad parameters file! Cannot parse spatial delta. Abort.\n");
-    if (fscanf(fParams, "%lf\n", &pParameters->time_step) != 1)
-        fail(ls, "Bad parameters file! Cannot parse time delta. Abort.\n");
-    if (fscanf(fParams, "%lf\n", &pParameters->simulation_time) != 1)
-        fail(ls, "Bad parameters file! Cannot parse simulation time. Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->length) != 1 || pParameters->length <= 0.0)
+        fail(ls, "Bad parameters file! Cannot parse length (must be strictly positive). Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->width) != 1 || pParameters->width <= 0.0)
+        fail(ls, "Bad parameters file! Cannot parse width (must be strictly positive). Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->height) != 1 || pParameters->height <= 0.0)
+        fail(ls, "Bad parameters file! Cannot parse height (must be strictly positive). Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->spatial_step) != 1 || pParameters->spatial_step <= 0.0)
+        fail(ls, "Bad parameters file! Cannot parse spatial delta (must be strictly positive). Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->time_step) != 1 || pParameters->time_step <= 0.0)
+        fail(ls, "Bad parameters file! Cannot parse time delta (must be strictly positive). Abort.\n");
+    if (fscanf(fParams, "%lf\n", &pParameters->simulation_time) != 1 || pParameters->simulation_time <= 0.0)
+        fail(ls, "Bad parameters file! Cannot parse simulation time (must be strictly positive). Abort.\n");
     if (fscanf(fParams, "%u\n", &pParameters->sampling_rate) != 1)
         fail(ls, "Bad parameters file! Cannot parse sampling rate (unsigned integer needed). Abort.\n");
     if (fscanf(fParams, "%u\n", &pParameters->mode) != 1 || (pParameters->mode != 0 && pParameters->mode != 1))
-        fail(ls, "Bad parameters file! Cannot parse execution mode. Abort.\n");
+        fail(ls, "Bad parameters file! Cannot parse execution mode can be either 0 or 1. Abort.\n");
 
     fclose(fParams);
 
-    pParameters->Nx = (size_t)(pParameters->length / pParameters->spatial_step);
-    pParameters->Ny = (size_t)(pParameters->width / pParameters->spatial_step);
-    pParameters->Nz = (size_t)(pParameters->height / pParameters->spatial_step);
+    pParameters->Nx = double_rounded_to_size_t(pParameters->length / pParameters->spatial_step);
+    pParameters->Ny = double_rounded_to_size_t(pParameters->width / pParameters->spatial_step);
+    pParameters->Nz = double_rounded_to_size_t(pParameters->height / pParameters->spatial_step);
+    if (pParameters->Nx == 0 || pParameters->Ny == 0 || pParameters->Nz == 0 || pParameters->Nx >= SIZE_MAX - 2 || pParameters->Ny >= SIZE_MAX - 2 || pParameters->Nz >= SIZE_MAX - 2)
+    {
+        perror("Something went wrong while computing Nx/Ny/Nz \n ERRNO: ");
+        perror(strerror(errno));
+        fail(ls, "\nPlease check your parameters file and try again.\n");
+    }
     pParameters->dump_csv = 0;
 
     // Parallelization:
@@ -727,29 +778,37 @@ void write_silo(Fields *pValidationFields, Parameters *pParams, int iteration)
     if (!dbfile)
         fail(pParams->ls, "Could not create DB\n");
 
-    DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pParams->coords, pParams->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
+    int err[11];
 
-    DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pParams->mean->Ex, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-    DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pParams->mean->Ey, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-    DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pParams->mean->Ez, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-    DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pParams->mean->Hx, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-    DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pParams->mean->Hy, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-    DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pParams->mean->Hz, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    //TODO: Silo doesn't throw any error when running out of disk free space. Report the bug to them.
+    err[0] = DBPutQuadmesh(dbfile, DB_MESHNAME, NULL, pParams->coords, pParams->dims, 3, DB_DOUBLE, DB_COLLINEAR, NULL);
+
+    err[1] = DBPutQuadvar1(dbfile, "ex", DB_MESHNAME, pParams->mean->Ex, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    err[2] = DBPutQuadvar1(dbfile, "ey", DB_MESHNAME, pParams->mean->Ey, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    err[3] = DBPutQuadvar1(dbfile, "ez", DB_MESHNAME, pParams->mean->Ez, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    err[4] = DBPutQuadvar1(dbfile, "hx", DB_MESHNAME, pParams->mean->Hx, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    err[5] = DBPutQuadvar1(dbfile, "hy", DB_MESHNAME, pParams->mean->Hy, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+    err[6] = DBPutQuadvar1(dbfile, "hz", DB_MESHNAME, pParams->mean->Hz, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
 
     if (pParams->mode == VALIDATION_MODE)
     {
-        DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
-        DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        err[7] = DBPutQuadvar1(dbfile, "aEy", DB_MESHNAME, pValidationFields->Ey, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        err[8] = DBPutQuadvar1(dbfile, "aHx", DB_MESHNAME, pValidationFields->Hx, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
+        err[9] = DBPutQuadvar1(dbfile, "aHz", DB_MESHNAME, pValidationFields->Hz, pParams->vdims, 3, NULL, 0, DB_DOUBLE, DB_ZONECENT, NULL);
     }
 
     const char *names[] = {"E", "H"};
     const char *defs[] = {"{ex, ey, ez}", "{hx, hy, hz}"};
     const int types[] = {DB_VARTYPE_VECTOR, DB_VARTYPE_VECTOR};
 
-    DBPutDefvars(dbfile, "vecs", 2, names, types, defs, NULL);
+    err[10] = DBPutDefvars(dbfile, "vecs", 2, names, types, defs, NULL);
 
-    DBClose(dbfile);
+    for (int i = 0; i < 11; ++i)
+        if (err[i] != 0)
+            fail(pParams->ls, "An error occurred while writting .silo files. Please check your file system and available disk space. Abort.\n");
+
+    if (DBClose(dbfile) != 0)
+        fail(pParams->ls, "An error occurred while writting .silo files. Please check your file system and available disk space. Abort.\n");
 }
 
 /** 
