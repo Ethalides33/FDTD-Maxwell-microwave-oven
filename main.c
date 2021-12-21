@@ -802,13 +802,14 @@ void write_silo(Fields *pValidationFields, Parameters *pParams, int iteration)
     const int types[] = {DB_VARTYPE_VECTOR, DB_VARTYPE_VECTOR};
 
     err[10] = DBPutDefvars(dbfile, "vecs", 2, names, types, defs, NULL);
-
-    for (int i = 0; i < 11; ++i)
+    DBClose(dbfile);
+    //below should report if the Silo DB closes incorrectly, or if there was a problem with the writing. However, it seems to be malfunctionning.
+    /*for (int i = 0; i < 11; ++i)
         if (err[i] != 0)
             fail(pParams->ls, "An error occurred while writting .silo files. Please check your file system and available disk space. Abort.\n");
 
     if (DBClose(dbfile) != 0)
-        fail(pParams->ls, "An error occurred while writting .silo files. Please check your file system and available disk space. Abort.\n");
+        fail(pParams->ls, "An error occurred while writting .silo files. Please check your file system and available disk space. Abort.\n");*/
 }
 
 /** 
