@@ -4,7 +4,7 @@ Based on the article from Kane S. Yee, "Numerical Solution of Initial Boundary V
 
 ## Project's structure
 
-This branch is a parallel implementation of the FDTD algorithm. You can find a parallel implementation
+This branch is a sequential implementation of the FDTD algorithm. You can find a parallel implementation
 under the branch "parallel".
 
 ## Perequisites
