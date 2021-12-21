@@ -938,14 +938,19 @@ void norm_mse_dump_csv(Parameters *p, Fields *v, double timer)
     if (csv == NULL)
         fail(p->ls, "Cannot open file data.csv");
 
-    fprintf(csv, "NormMSEEy,%.20lf,%.20lf\n", Er_Ey_num / Er_Ey_div, timer);
-    fprintf(csv, "NormMSEHx,%.20lf,%.20lf\n", Er_Hx_num / Er_Hx_div, timer);
-    fprintf(csv, "NormMSEHz,%.20lf,%.20lf\n", Er_Hz_num / Er_Hz_div, timer);
+    const double energyE = calculate_E_energy(p);
+    const double energyH = calculate_H_energy(p);
 
-    fprintf(csv, "EnergyElectric,%0.20f,%.20lf\n", calculate_E_energy(p), timer);
-    fprintf(csv, "EnergyMagnetic,%0.20f,%.20lf\n", calculate_H_energy(p), timer);
-    fprintf(csv, "EnergyTotal,%0.20f,%.20lf\n", calculate_E_energy(p) + calculate_H_energy(p), timer);
-    fprintf(csv, "EnergyTotalTheory,%0.20f,%.20lf\n", (EPSILON * p->length * p->width * p->height) / 8., timer);
+    // fprintf(csv, "timer,NormMSEEy,NormMSEHx,NormMSEHz,EnergyElectric,EnergyMagnetic,EnergyTotal,EnergyTotalTheory\n");
+    fprintf(csv, "%.20lf,%.20lf,%.20lf,%.20lf,%.20lf,%.20lf,%.20lf,%.20lf\n",
+            timer,
+            Er_Ey_num / Er_Ey_div,
+            Er_Hx_num / Er_Hx_div,
+            Er_Hz_num / Er_Hz_div,
+            energyE,
+            energyH,
+            energyE + energyH,
+            (EPSILON * p->length * p->width * p->height) / 8.);
 
     fclose(csv);
 }
@@ -1143,6 +1148,13 @@ int main(int argc, char *argv[])
     {
         if (rank == 0)
         {
+            // Prepare the csv file
+            FILE *csv;
+            csv = fopen("data.csv", "w");
+            if (csv == NULL)
+                fail(pParameters->ls, "Cannot open file data.csv");
+            fprintf(csv, "timer,NormMSEEy,NormMSEHx,NormMSEHz,EnergyElectric,EnergyMagnetic,EnergyTotal,EnergyTotalTheory\n");
+            fclose(csv);
             pValidationFields = initialize_mean_fields(pParameters);
             pParameters->validation_fields = initialize_fields(pParameters);
             printf("Main process: Validation mode activated. \n");
