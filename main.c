@@ -943,7 +943,7 @@ void set_source(Parameters *p, Fields *pFields, double time_counter)
 
     const double a_prime = 0.1;
     const double b_prime = 0.05;
-    const double f = 2.45e10;
+    const double f = 2.45e9;
 
     double min_y = p->width / 2. - a_prime / 2.;
     double max_y = min_y + a_prime;
